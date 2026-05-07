@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell *)",
+      "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; $json.PSObject.Properties.Name)",
+      "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; \"vertices count: $\\($json.vertices.Count\\)\"; \"tiles count: $\\($json.tiles.Count\\)\"; \"first tile keys:\"; $json.tiles[0].PSObject.Properties.Name; \"first tile sample:\"; $json.tiles[0] | ConvertTo-Json -Depth 4)",
+      "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; \"elev range:\"; \\($json.vertices | Measure-Object -Property elevation -Min -Max | Select Minimum,Maximum\\); \"hex x range:\"; \\($json.vertices.hexCoords | Measure-Object -Property x -Min -Max | Select Minimum,Maximum\\); \"hex y range:\"; \\($json.vertices.hexCoords | Measure-Object -Property y -Min -Max | Select Minimum,Maximum\\); \"tile vertexIndices length distribution:\"; \\($json.tiles | Group-Object {$_.vertexIndices.Count} | Select Name,Count\\))",
+      "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; $emin = \\($json.vertices | Measure-Object -Property elevation -Min\\).Minimum; $emax = \\($json.vertices | Measure-Object -Property elevation -Max\\).Maximum; \"elev min/max: $emin / $emax\"; $xs = $json.vertices | ForEach-Object { $_.hexCoords.x }; $ys = $json.vertices | ForEach-Object { $_.hexCoords.y }; $xmin = \\($xs | Measure-Object -Min\\).Minimum; $xmax = \\($xs | Measure-Object -Max\\).Maximum; $ymin = \\($ys | Measure-Object -Min\\).Minimum; $ymax = \\($ys | Measure-Object -Max\\).Maximum; \"x: $xmin / $xmax  y: $ymin / $ymax\"; $sizes = $json.tiles | ForEach-Object { $_.vertexIndices.Count } | Group-Object; $sizes | Format-Table Name,Count)",
+      "PowerShell(Test-Path *)"
+    ]
+  }
+}

@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rome Topography — Skewed Boxes</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #182028; font-family: ui-monospace, Menlo, Consolas, monospace; color: #ddd; }
+  #hud { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.55); padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.6; min-width: 230px; }
+  #hud h3 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #fff; }
+  #hud label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #hud input[type=range] { flex: 1; }
+  #hud button { background: #2a3540; color: #ddd; border: 1px solid #3a4854; padding: 4px 8px; cursor: pointer; border-radius: 3px; margin-right: 4px; font: inherit; }
+  #hud button:hover { background: #354352; }
+  #hud .stat { color: #8aa; }
+</style>
+</head>
+<body>
+<div id="hud">loading large_rome.json...</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader }     from 'three/addons/loaders/STLLoader.js';
+
+const hud = document.getElementById('hud');
+
+let data;
+try {
+  data = await fetch('topo_json/large_rome.json').then(r => {
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    return r.json();
+  });
+} catch (e) {
+  hud.innerHTML = `<b>fetch failed:</b> ${e.message}<br><br>This page must be served over HTTP.<br>From the project folder run e.g.<br><code>python -m http.server 8000</code><br>then open http://localhost:8000/`;
+  throw e;
+}
+
+const verts = data.vertices;
+const tiles = data.tiles;
+
+// Center the model on the origin
+let cx = 0, cz = 0;
+for (const v of verts) { cx += v.hexCoords.x; cz += v.hexCoords.y; }
+cx /= verts.length; cz /= verts.length;
+
+// Knobs
+const params = {
+  elevScale: 1.0,   // vertical exaggeration; box height also scales with this
+  boxHeight: 1.0,   // spec: height = 1 elevation-unit above the max foot
+  waterLevel: 13.0, // elevation in meters
+};
+
+// --- Load cube model ---
+// Expected: a 1x1x1 mesh centered at origin, so local positions live in [-0.5, 0.5]^3.
+// Mesh resolution is up to the asset: a basic 8-vertex cube gives the same shape as the
+// hardcoded version; a subdivided ("bisected") cube produces a smoother bilinear bottom.
+// STLLoader returns a BufferGeometry directly (STL has no scene graph or transforms).
+const stlLoader = new STLLoader();
+let cubeGeom = null;
+try {
+  cubeGeom = await stlLoader.loadAsync('assets/test_cube.stl');
+  // STL exporters often emit triangles with reversed winding relative to Three.js's
+  // CCW = front-face convention. Flip once so outward normals point outward.
+  flipWinding(cubeGeom);
+} catch (e) {
+  hud.innerHTML = `<b>cube load failed:</b> ${e.message}<br>falling back to BoxGeometry`;
+  cubeGeom = new THREE.BoxGeometry(1, 1, 1);
+}
+
+function flipWinding(geom) {
+  const idx = geom.getIndex();
+  if (idx) {
+    const a = idx.array;
+    for (let i = 0; i < a.length; i += 3) {
+      const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t;
+    }
+    idx.needsUpdate = true;
+  } else {
+    const a = geom.getAttribute('position').array;
+    for (let i = 0; i < a.length; i += 9) {
+      for (let k = 0; k < 3; k++) {
+        const t = a[i + 3 + k]; a[i + 3 + k] = a[i + 6 + k]; a[i + 6 + k] = t;
+      }
+    }
+    geom.getAttribute('position').needsUpdate = true;
+  }
+}
+
+// World-space position for a vertex. Three.js is right-handed (camera looks at -Z),
+// hex coords are image-space (y-down). Map hex.y directly to world.z so the top of
+// the source image (small hex.y) sits at -Z, far from the default camera.
+function worldPos(v, elevScale) {
+  return new THREE.Vector3(
+    v.hexCoords.x - cx,
+    v.elevation * elevScale,
+    v.hexCoords.y - cz
+  );
+}
+
+// The JSON's per-tile vertexIndices aren't consistently wound. Force each
+// quad into CCW-from-above order in the XZ plane so a fixed triangulation
+// produces +Y top normals, -Y bottom normals, and outward side normals.
+function ensureCCWFromAbove(quad) {
+  const e1x = quad[1].x - quad[0].x, e1z = quad[1].z - quad[0].z;
+  const e2x = quad[3].x - quad[0].x, e2z = quad[3].z - quad[0].z;
+  // y-component of cross((e1.x,0,e1.z), (e2.x,0,e2.z))
+  const yCross = e1z * e2x - e1x * e2z;
+  if (yCross < 0) {
+    const t = quad[1]; quad[1] = quad[3]; quad[3] = t;
+  }
+}
+
+// --- Build TOPO mesh (smooth-shaded, indexed so neighbours share vertices) ---
+// One vertex per JSON vertex; tiles index into the shared array. computeVertexNormals
+// then averages face normals at each shared corner, giving Gouraud-smooth shading
+// without changing the geometry's silhouette.
+function buildTopoGeometry(elevScale) {
+  const positions = new Float32Array(verts.length * 3);
+  for (let i = 0; i < verts.length; i++) {
+    const p = worldPos(verts[i], elevScale);
+    positions[i * 3]     = p.x;
+    positions[i * 3 + 1] = p.y;
+    positions[i * 3 + 2] = p.z;
+  }
+
+  const indices = new Uint32Array(tiles.length * 6);
+  let o = 0;
+  for (const t of tiles) {
+    let i0 = t.vertexIndices[0],
+        i1 = t.vertexIndices[1],
+        i2 = t.vertexIndices[2],
+        i3 = t.vertexIndices[3];
+    // Force CCW-from-above so all face normals end up pointing +Y before averaging.
+    const p0x = positions[i0*3], p0z = positions[i0*3 + 2];
+    const e1x = positions[i1*3]     - p0x, e1z = positions[i1*3 + 2] - p0z;
+    const e2x = positions[i3*3]     - p0x, e2z = positions[i3*3 + 2] - p0z;
+    if (e1z * e2x - e1x * e2z < 0) { const tmp = i1; i1 = i3; i3 = tmp; }
+    indices[o++] = i0; indices[o++] = i1; indices[o++] = i2;
+    indices[o++] = i0; indices[o++] = i2; indices[o++] = i3;
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(new THREE.BufferAttribute(indices, 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+// --- Build SKEWED-BOX mesh by deforming the loaded cube model into each cell ---
+// Per-vertex deformation maps the unit cube's local space [-0.5, 0.5]^3 into the
+// cell's skewed prism:
+//   s = lx + 0.5, t = lz + 0.5  → bilinear weight in the cell footprint (XZ)
+//   h = ly + 0.5                → 0 at bottom (skewed), 1 at top (flat)
+//   bottomP(s,t) = bilinear blend of the 4 quad corners (XYZ)
+//   topY        = max(corner Y) + boxHeight                  (constant per cell)
+//   final.xz = bottomP.xz                                    (vertical columns)
+//   final.y  = lerp(bottomP.y, topY, h)
+//
+// 4 bottom corners of the cube land exactly on the 4 quad vertices.
+// 4 top corners land at the same XZ but at the flat topY.
+// Interior vertices (if the cube is subdivided) follow the bilinear surface,
+// so a denser cube gives a smoother bend along the cell's diagonal.
+function buildBoxGeometry(elevScale, boxHeight) {
+  const cubePos = cubeGeom.getAttribute('position');
+  const cubeIdx = cubeGeom.getIndex();
+  const vPerCube = cubePos.count;
+  const iPerCube = cubeIdx ? cubeIdx.count : vPerCube; // non-indexed: emit a 1:1 index buffer
+
+  const positions = new Float32Array(tiles.length * vPerCube * 3);
+  const indices   = (tiles.length * vPerCube > 65535)
+    ? new Uint32Array(tiles.length * iPerCube)
+    : new Uint16Array(tiles.length * iPerCube);
+
+  let posOff = 0;
+  let idxOff = 0;
+  const heightWorld = boxHeight * elevScale;
+
+  for (const t of tiles) {
+    const bottom = t.vertexIndices.map(i => worldPos(verts[i], elevScale));
+    ensureCCWFromAbove(bottom);
+
+    let maxY = -Infinity;
+    for (const b of bottom) if (b.y > maxY) maxY = b.y;
+    const topY = maxY + heightWorld;
+
+    const baseV = posOff / 3;
+
+    for (let v = 0; v < vPerCube; v++) {
+      const lx = cubePos.getX(v);
+      const ly = cubePos.getY(v);
+      const lz = cubePos.getZ(v);
+
+      const s = lx + 0.5;
+      const tt = lz + 0.5;
+      const h  = ly + 0.5;
+
+      const w00 = (1 - s) * (1 - tt);
+      const w10 =      s  * (1 - tt);
+      const w11 =      s  *      tt;
+      const w01 = (1 - s) *      tt;
+
+      const bx = w00*bottom[0].x + w10*bottom[1].x + w11*bottom[2].x + w01*bottom[3].x;
+      const by = w00*bottom[0].y + w10*bottom[1].y + w11*bottom[2].y + w01*bottom[3].y;
+      const bz = w00*bottom[0].z + w10*bottom[1].z + w11*bottom[2].z + w01*bottom[3].z;
+
+      positions[posOff    ] = bx;
+      positions[posOff + 1] = by * (1 - h) + topY * h;
+      positions[posOff + 2] = bz;
+      posOff += 3;
+    }
+
+    if (cubeIdx) {
+      for (let i = 0; i < cubeIdx.count; i++) {
+        indices[idxOff++] = baseV + cubeIdx.getX(i);
+      }
+    } else {
+      for (let v = 0; v < vPerCube; v++) indices[idxOff++] = baseV + v;
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(new THREE.BufferAttribute(indices, 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+// --- Scene ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x182028);
+scene.fog = new THREE.Fog(0x182028, 1200, 3500);
+
+const topoMat = new THREE.MeshStandardMaterial({ color: 0x3d5566, flatShading: false, roughness: 0.95, metalness: 0.0 });
+const boxMat  = new THREE.MeshStandardMaterial({ color: 0xddc794, flatShading: true, roughness: 0.7,  metalness: 0.0 });
+
+let topoMesh = new THREE.Mesh(buildTopoGeometry(params.elevScale), topoMat);
+let boxMesh  = new THREE.Mesh(buildBoxGeometry(params.elevScale, params.boxHeight), boxMat);
+scene.add(topoMesh);
+scene.add(boxMesh);
+
+// --- Water plane ---
+// Sized from the topo's XZ extent + 10% padding so it covers the whole map.
+let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+for (const v of verts) {
+  const x = v.hexCoords.x - cx;
+  const z = v.hexCoords.y - cz;
+  if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+  if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+}
+const waterW = (xMax - xMin) * 1.1;
+const waterD = (zMax - zMin) * 1.1;
+const waterGeom = new THREE.PlaneGeometry(waterW, waterD);
+const waterMat = new THREE.MeshStandardMaterial({
+  color: 0x3a7ca5, transparent: true, opacity: 0.6,
+  side: THREE.DoubleSide, metalness: 0.2, roughness: 0.35,
+});
+const waterMesh = new THREE.Mesh(waterGeom, waterMat);
+waterMesh.rotation.x = -Math.PI / 2;
+waterMesh.position.set((xMin + xMax) / 2, params.waterLevel * params.elevScale, (zMin + zMax) / 2);
+scene.add(waterMesh);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+sun.position.set(600, 1000, 400);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x88aacc, 0.25);
+fill.position.set(-400, 300, -500);
+scene.add(fill);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 8000);
+camera.position.set(700, 700, 900);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 50, 0);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// --- HUD ---
+const cubeTris = (cubeGeom.getIndex() ? cubeGeom.getIndex().count : cubeGeom.getAttribute('position').count) / 3;
+const triCount = tiles.length * cubeTris + tiles.length * 2;
+hud.innerHTML = `
+  <h3>Rome topo · skewed boxes</h3>
+  <div class="stat">${verts.length.toLocaleString()} verts · ${tiles.length.toLocaleString()} tiles · ${cubeTris} tris/cube · ${triCount.toLocaleString()} tris</div>
+  <div style="margin-top:8px">
+    <button id="bTopo">topo</button>
+    <button id="bBoxes">boxes</button>
+    <button id="bWater">water</button>
+    <button id="bWire">wire</button>
+  </div>
+  <div style="margin-top:8px">
+    <label>elev x<span id="eLbl">${params.elevScale.toFixed(2)}</span>
+      <input id="eScale" type="range" min="0.01" max="5" step="0.01" value="${params.elevScale}">
+    </label>
+    <label>box h <span id="hLbl">${params.boxHeight.toFixed(1)}</span>
+      <input id="bHeight" type="range" min="0.2" max="10" step="0.2" value="${params.boxHeight}">
+    </label>
+    <label>water <span id="wLbl">${params.waterLevel.toFixed(1)}m</span>
+      <input id="wLevel" type="range" min="0" max="100" step="0.5" value="${params.waterLevel}">
+    </label>
+  </div>
+`;
+
+document.getElementById('bTopo').onclick  = () => topoMesh.visible  = !topoMesh.visible;
+document.getElementById('bBoxes').onclick = () => boxMesh.visible   = !boxMesh.visible;
+document.getElementById('bWater').onclick = () => waterMesh.visible = !waterMesh.visible;
+document.getElementById('bWire').onclick  = () => { boxMat.wireframe = !boxMat.wireframe; topoMat.wireframe = boxMat.wireframe; };
+
+function rebuild() {
+  topoMesh.geometry.dispose();
+  boxMesh.geometry.dispose();
+  topoMesh.geometry = buildTopoGeometry(params.elevScale);
+  boxMesh.geometry  = buildBoxGeometry(params.elevScale, params.boxHeight);
+}
+document.getElementById('eScale').oninput = (e) => {
+  params.elevScale = parseFloat(e.target.value);
+  document.getElementById('eLbl').textContent = params.elevScale.toFixed(2);
+  waterMesh.position.y = params.waterLevel * params.elevScale;
+  rebuild();
+};
+document.getElementById('bHeight').oninput = (e) => {
+  params.boxHeight = parseFloat(e.target.value);
+  document.getElementById('hLbl').textContent = params.boxHeight.toFixed(1);
+  rebuild();
+};
+document.getElementById('wLevel').oninput = (e) => {
+  params.waterLevel = parseFloat(e.target.value);
+  document.getElementById('wLbl').textContent = params.waterLevel.toFixed(1) + 'm';
+  waterMesh.position.y = params.waterLevel * params.elevScale;
+};
+
+// --- Loop ---
+(function loop() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
