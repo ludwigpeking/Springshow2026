@@ -6,7 +6,13 @@
       "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; \"vertices count: $\\($json.vertices.Count\\)\"; \"tiles count: $\\($json.tiles.Count\\)\"; \"first tile keys:\"; $json.tiles[0].PSObject.Properties.Name; \"first tile sample:\"; $json.tiles[0] | ConvertTo-Json -Depth 4)",
       "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; \"elev range:\"; \\($json.vertices | Measure-Object -Property elevation -Min -Max | Select Minimum,Maximum\\); \"hex x range:\"; \\($json.vertices.hexCoords | Measure-Object -Property x -Min -Max | Select Minimum,Maximum\\); \"hex y range:\"; \\($json.vertices.hexCoords | Measure-Object -Property y -Min -Max | Select Minimum,Maximum\\); \"tile vertexIndices length distribution:\"; \\($json.tiles | Group-Object {$_.vertexIndices.Count} | Select Name,Count\\))",
       "PowerShell($json = Get-Content 'C:\\\\Users\\\\qli\\\\Desktop\\\\IT\\\\2605_SpringShow\\\\topo_json\\\\large_rome.json' -Raw | ConvertFrom-Json; $emin = \\($json.vertices | Measure-Object -Property elevation -Min\\).Minimum; $emax = \\($json.vertices | Measure-Object -Property elevation -Max\\).Maximum; \"elev min/max: $emin / $emax\"; $xs = $json.vertices | ForEach-Object { $_.hexCoords.x }; $ys = $json.vertices | ForEach-Object { $_.hexCoords.y }; $xmin = \\($xs | Measure-Object -Min\\).Minimum; $xmax = \\($xs | Measure-Object -Max\\).Maximum; $ymin = \\($ys | Measure-Object -Min\\).Minimum; $ymax = \\($ys | Measure-Object -Max\\).Maximum; \"x: $xmin / $xmax  y: $ymin / $ymax\"; $sizes = $json.tiles | ForEach-Object { $_.vertexIndices.Count } | Group-Object; $sizes | Format-Table Name,Count)",
-      "PowerShell(Test-Path *)"
+      "PowerShell(Test-Path *)",
+      "Bash(git ls-tree *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('topo_json/large_rome.json'\\)\\); print\\('top-level keys:', list\\(d.keys\\(\\)\\)\\); print\\('mapping keys:', list\\(d['mapping'].keys\\(\\)\\)\\); v = d['vertices'][0]; print\\('vertex keys:', list\\(v.keys\\(\\)\\)\\); print\\('first tile keys:', list\\(d['tiles'][0].keys\\(\\)\\)\\)\")",
+      "Bash(grep -nE \"^\\\\s{4,8}\\([a-zA-Z_][a-zA-Z0-9_]*\\)\\\\\\(\" 15_settlement.js)"
     ]
   }
 }

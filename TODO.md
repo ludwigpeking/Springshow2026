@@ -83,3 +83,17 @@ file_names_part4 = [
 ]
 
 it is to work in sketchup, if you can, do it. otherwise maybe we run a ruby script in sketchup to do the processing.
+
+extend the exporting to the functionality of createAtlas.py. which create a full set of 3D assets by rotating and mirroring the original assets. we first put all the assets in a folder, then we put them all into a glb file, in an array like in createAtlas.py. with distancing of 60m
+
+instructions:
+next is a large step, think about how to implement it. \2511_Hexagonal_World\index.html is a       
+  simulation that spawn buildings in a quadrangulated grid with vertices that has multiple attributes. It drwas with p5.js. we essentially do the same thing, just  use three.js as we have started in root\index.html.
+  you need to read the code in \2511_Hexagonal_World\index.html, and understand how it works, and then implement the same thing in three.js. you can actually use large part of that code, only change the graphics and drawing related code. try to complete it. if you can not do it in one shot, make a plan to do it step by step.
+
+❯ you need to look at the original code detail - we spawn far more merchants and farmers  
+  than castle, castle probability is very low. you can create a HUD value control for the  
+  probabilities of them, adding to 100% in total. and you need to also set up a path       
+  finding parameter panel. and there're two accessible level parameters ( a close          
+  influence and a far inflence distance cost), we need control of these two parameters     
+  too in the panel.    
