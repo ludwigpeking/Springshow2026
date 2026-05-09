@@ -119,3 +119,30 @@ draw the traffic routes in the way that the width is proportional to the traffic
 
 instruction:
 influence range: close to 50, far to 150
+the 1st main castle should not be too close to the border, say the long radius of the hex is R, the castle should be at least R/3 from the border. 
+the castle's security value should be propogated in it's far influence range. the other propogate in short influence range.
+
+the traffic count diagram lines are too thick. do a logarithmic to the lineweight
+
+ add day/night modes for advanced lighting: for day: lower the sun altitude to 20 degree, the   
+  azimuth should rotate 1 degree/frame for day time mode                                          
+  the performance is problematic. the shadow map size is still low for this scene. the shadow is  
+  too pure black. not affected by the environmental light.                                        
+  we need to find a way to improve quality and performance.    
+
+  combine day and night mode and advanced lighting into one:
+  1. the "sun" orbits around, azuimuth rotate 1 degree/frame. 360 degree. 150 for day, bright white sun. 150 for moon, dim white light. 30 for dawn/dusk, orange light.
+  the environmental light is light blue in day, dark blue in night, and yellow in down/dusk. the light colors of the "sun" and the environmental light is transitional. the anchor colors should be adjustable at the panel. 
+  for the night mode, trun on the light (we use "merchant value" layer for the light, but we want to even out the luminance, do something like sqrt(merchant value) if the value is normalized to 0-1.
+  2. camera more focused on the city, smaller FOV
+
+1. change the night sun to a middle grey so it would not be so dead.
+2. because of the perspective, there are larger ground below the center of the screen, maybe we should do a nearly parallel projection, a very small FOV and from far away to have the hexagon better fit the screen.
+3. the way to build the terrain with building block makes it hard to smooth the terrain, since the meshes belong to different tiles. is there a way to do a kind of smoothing. a trick might be thinking about they are all with the same material of "w". so some filter might work?
+
+instruction:
+1. the camera roate, 0.5degree/frame, CW, hovering above the scene. 
+2. at auto-spawning mode, when habitable tiles are 60% used,   
+  restart the simulation (of the same map)  automatically. 
+3. add a back to main menu button on the right side, going back to        
+  three-city option.        

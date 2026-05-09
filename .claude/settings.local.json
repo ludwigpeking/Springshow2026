@@ -15,7 +15,12 @@
       "Bash(grep -nE \"^\\\\s{4,8}\\([a-zA-Z_][a-zA-Z0-9_]*\\)\\\\\\(\" 15_settlement.js)",
       "Bash(awk 'NR>=1019 && NR<=1024' index.html)",
       "Bash(awk 'NR>1019 {n++; if \\(/^}/ && n>5\\) {print \"function ends at line: \" NR; exit}}' index.html)",
-      "Bash(awk 'NR>=145 && NR<=185' index.html)"
+      "Bash(awk 'NR>=145 && NR<=185' index.html)",
+      "Bash(mkdir -p assets/sounds assets/arts topo_json)",
+      "Bash(cp 2511_Hexagonal_World/assets/sounds/PoncePreludioInEMajor.mp3 assets/sounds/)",
+      "Bash(cp 2511_Hexagonal_World/map/hongkong/hongkong_topo.json topo_json/large_hongkong.json)",
+      "Bash(cp 2511_Hexagonal_World/map/tokyo/topo_small.json topo_json/large_tokyo.json)",
+      "Bash(cp 2511_Hexagonal_World/assets/arts/hongkong_vignette.jpg assets/arts/)"
     ]
   }
 }

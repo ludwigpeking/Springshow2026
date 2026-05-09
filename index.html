@@ -5,58 +5,161 @@
 <title>City Sim · 3D</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #15191e;
-               font-family: ui-monospace, Menlo, Consolas, monospace; color: #ddd; font-size: 12px; }
+               font-family: sans-serif; color: #222; font-size: 14px; }
 
   /* Top bar — counts + inspect output */
-  #topBar { position: absolute; top: 10px; left: 60px; right: 60px;
-            background: rgba(0,0,0,0.55); padding: 6px 12px; border-radius: 6px;
-            color: #cfd6dd; font-size: 11px; line-height: 1.55; max-height: 95px;
-            overflow-y: auto; z-index: 5; pointer-events: none; }
+  #topBar { position: absolute; top: 10px; left: 100px; right: 100px;
+            background: rgba(0,0,0,0.45); padding: 6px 12px; border-radius: 6px;
+            color: #f0e6d2; font-size: 12px; line-height: 1.55; max-height: 95px;
+            overflow-y: auto; z-index: 5; pointer-events: none;
+            font-family: Georgia, serif; }
   #topBar > * { pointer-events: auto; }
-  #counts { color: #8aa; }
+  #counts { color: #f0e6d2; opacity: 0.7; }
 
-  /* Left + right vertical button columns */
-  .ui-col { position: absolute; top: 10px; display: flex; flex-direction: column; gap: 3px;
-            background: rgba(0,0,0,0.55); padding: 6px; border-radius: 6px; z-index: 10; }
-  #leftCol  { left:  10px; }
-  #rightCol { right: 10px; }
-  .ui-btn { width: 38px; height: 38px; padding: 0; margin: 0;
-            background: #2a3540; color: #ddd; border: 1px solid #3a4854;
-            cursor: pointer; border-radius: 50%;
-            font-size: 18px; line-height: 1;
+  /* Left + right vertical button columns. NO background block — buttons
+     stand on their own with shadows, like the reference 2D version. */
+  .ui-col { position: absolute; top: 20px; display: flex; flex-direction: column;
+            gap: 6px; z-index: 10; padding: 0; background: transparent; }
+  #leftCol  { left:  20px; }
+  #rightCol { right: 20px; }
+
+  /* Round button base — literal port of the reference style. */
+  .ui-btn { width: 50px; height: 50px; padding: 0; margin: 0;
+            font-size: 24px; line-height: 1;
+            border: 2px solid #333; border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.7);
+            color: #222;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, background-color 0.3s;
             display: flex; align-items: center; justify-content: center; }
-  .ui-btn.text { font-size: 12px; font-family: inherit; }
-  .ui-btn:hover { background: #354352; }
-  .ui-btn.armed { background: #4d6177; border-color: #6a8aa6; color: #fff; }
-  /* Auto-simulate gets a larger pill so it's visually the primary action */
-  #bAuto { width: 52px; height: 52px; font-size: 24px; margin: 4px 0; }
-  .ui-sep { height: 1px; background: #3a4854; margin: 4px 2px; }
+  .ui-btn.text { font-size: 14px; font-family: Georgia, serif; font-weight: bold; }
+  .ui-btn:hover { transform: scale(1.1); }
+  .ui-btn.armed { background-color: rgba(100, 180, 255, 0.9); border-color: #0066cc; color: #fff; }
 
-  /* Settings popup (toggled by ⚙). Holds every parameter slider */
-  #settingsPanel { position: absolute; top: 60px; right: 60px; bottom: 10px;
-                   width: 360px; background: rgba(20,30,40,0.95);
-                   padding: 30px 16px 12px 16px; border-radius: 6px;
-                   overflow-y: auto; z-index: 20; color: #cfd6dd; font-size: 12px; }
+  /* Auto-simulate is the hero — bigger and green/red. */
+  #bAuto { width: 75px; height: 75px; font-size: 36px;
+           background-color: rgba(76, 175, 80, 0.9); color: #fff; margin: 0 0 6px 0; }
+  #bAuto:hover { background-color: rgba(56, 142, 60, 1); }
+  #bAuto.armed { background-color: rgba(244, 67, 54, 0.9); border-color: #b71c1c; }
+
+  /* Click-to-place mode buttons — colour-coded like the reference */
+  #rightCol button[data-mode="road"]     { background-color: rgba(158, 158, 158, 0.9); }
+  #rightCol button[data-mode="castle"]   { background-color: rgba(156,  39, 176, 0.9); color: #fff; }
+  #rightCol button[data-mode="farmer"]   { background-color: rgba(139, 195,  74, 0.9); }
+  #rightCol button[data-mode="merchant"] { background-color: rgba(255, 193,   7, 0.9); }
+  #rightCol button[data-mode="delete"]   { background-color: rgba(244,  67,  54, 0.9); color: #fff; }
+  #bSave  { background-color: rgba( 33, 150, 243, 0.9); color: #fff; }
+  #bLoad  { background-color: rgba(156,  39, 176, 0.9); color: #fff; }
+  #bHome  { background-color: rgba(255, 152,   0, 0.9); color: #fff; }
+  #bHome:hover { background-color: rgba(245, 124, 0, 1); }
+
+  .ui-sep { height: 2px; background-color: rgba(0, 0, 0, 0.3); margin: 4px 0; }
+
+  /* Settings popup */
+  #settingsPanel { position: absolute; top: 80px; right: 90px; bottom: 20px;
+                   width: 360px; background: rgba(255, 255, 255, 0.96);
+                   padding: 30px 16px 12px 16px; border-radius: 8px;
+                   box-shadow: -2px 0 10px rgba(0,0,0,0.3);
+                   overflow-y: auto; z-index: 20; color: #222; font-size: 13px;
+                   font-family: sans-serif; }
   #settingsPanel.hidden { display: none; }
-  #settingsPanel h3 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #fff; }
+  #settingsPanel h3 { margin: 0 0 6px 0; font-size: 14px; font-weight: bold;
+                      color: #222; font-family: Georgia, serif; }
   #settingsPanel #bSettingsClose { position: absolute; top: 6px; right: 6px; font-size: 14px;
-                                   width: 28px; height: 28px; border-radius: 4px; }
-  #settingsPanel hr { border: none; border-top: 1px solid #3a4854; margin: 10px 0; }
+                                   width: 32px; height: 32px; border-radius: 4px; }
+  #settingsPanel hr { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
   #settingsPanel label { display: flex; justify-content: space-between; align-items: center;
                           gap: 8px; margin-top: 4px; }
   #settingsPanel input[type=range] { flex: 1; }
   #settingsPanel input[type=number] { width: 60px; }
   .row { margin-top: 6px; }
-  .ok  { color: #7be8a4; }
-  .bad { color: #ff8a8a; }
+  .row strong { font-family: Georgia, serif; color: #222; }
+  .ok  { color: #2e7d32; }
+  .bad { color: #c62828; }
+
+  /* Title-screen overlay — literal port of the reference */
+  #titleScreen { position: fixed; inset: 0; z-index: 1000;
+                 background: url("assets/arts/romeEdo.png") center/cover no-repeat;
+                 display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; gap: 30px;
+                 transition: opacity 0.5s ease-out; opacity: 1; }
+  #titleScreen::before { content: ""; position: absolute; inset: 0;
+                         background: rgba(0, 0, 0, 0.4); z-index: -1; }
+  #titleScreen.hidden { opacity: 0; pointer-events: none; }
+  #titleScreen h1 { font-family: Georgia, serif; font-size: 48px; font-weight: bold;
+                    color: #f0e6d2; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+                    letter-spacing: 2px; margin: 0; }
+  #titleScreen p { font-family: Georgia, serif; color: rgba(240,230,210,0.7);
+                   margin: 0; font-size: 16px; }
+  .city-row { display: flex; gap: 60px; justify-content: center; align-items: center;
+              margin-top: 20px; }
+  .city-tile { width: 400px; height: 500px; padding: 0;
+               border: 4px solid rgba(240, 230, 210, 0.6); border-radius: 12px;
+               background: transparent; cursor: pointer; overflow: hidden;
+               box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+               transition: all 0.4s; position: relative; }
+  .city-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .city-tile:hover { transform: translateY(-10px) scale(1.05);
+                     border-color: rgba(240,230,210,1);
+                     box-shadow: 0 12px 30px rgba(0,0,0,0.7); }
+  .city-tile .city-name { position: absolute; bottom: 20px; left: 50%;
+                          transform: translateX(-50%);
+                          font-family: Georgia, serif; font-size: 28px; font-weight: bold;
+                          color: #f0e6d2; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+                          pointer-events: none; }
+
+  /* Audio toggle on bottom-right */
+  #bAudio { position: absolute; bottom: 20px; right: 20px; z-index: 8; }
+
+  /* Demonstration text overlay — drawn over the canvas at the bottom */
+  #demoLabel { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+               z-index: 6; pointer-events: none; opacity: 0;
+               font-family: Georgia, serif; font-size: 36px; font-weight: bold;
+               letter-spacing: 4px; color: #f0e6d2;
+               text-shadow: 2px 2px 8px rgba(0,0,0,0.85), 0 0 24px rgba(0,0,0,0.5);
+               transition: opacity 0.4s; }
+  #demoLabel.show { opacity: 1; }
 </style>
 </head>
 <body>
+<!-- Title screen with city selection (a la 2D version) -->
+<div id="titleScreen">
+    <h1>The Algorithms of the City</h1>
+    <p>pick a city to begin</p>
+    <div class="city-row">
+        <button class="city-tile" data-city="hongkong" data-topo="topo_json/large_hongkong.json">
+            <img src="assets/arts/hongkong_vignette.jpg" alt="Hong Kong">
+            <span class="city-name">Hong Kong</span>
+        </button>
+        <button class="city-tile" data-city="rome" data-topo="topo_json/large_rome.json">
+            <img src="assets/arts/rome_vignette.jpg" alt="Rome">
+            <span class="city-name">Rome</span>
+        </button>
+        <button class="city-tile" data-city="tokyo" data-topo="topo_json/large_tokyo.json">
+            <img src="assets/arts/tokyo_vignette.jpg" alt="Tokyo">
+            <span class="city-name">Tokyo</span>
+        </button>
+    </div>
+    <p style="margin-top:24px;color:#566">click a tile — music starts on first interaction</p>
+</div>
+
+<!-- Background music. <audio> can autoplay only after a user gesture; the
+     city-tile click triggers it. -->
+<audio id="bgMusic" src="assets/sounds/PoncePreludioInEMajor.mp3" loop preload="auto"></audio>
+
+<button class="ui-btn" id="bAudio" title="toggle music">🔇</button>
+
+<!-- Big text overlay used by the demonstration cycle to label the
+     currently-shown debug layer over the canvas. -->
+<div id="demoLabel"></div>
+
 <div id="topBar"><span id="counts">loading...</span> <span id="inspectInfo" style="display:none"></span></div>
 
 <!-- Left column: vertex inspector, visibility toggles, debug-value layers. -->
 <div id="leftCol" class="ui-col">
     <button class="ui-btn" data-mode="inspect"  title="🔍 inspect — click any vertex/tile to read its values">🔍</button>
+    <button class="ui-btn" id="bDemo"            title="🎬 demonstration mode — cycles through every debug layer with on-screen labels">🎬</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bToggleTiles"   title="city tiles">🏙️</button>
     <button class="ui-btn" id="bToggleSettle"  title="settlement markers">🏘️</button>
@@ -96,6 +199,7 @@
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bSave"     title="save simulation as .json">💾</button>
     <button class="ui-btn" id="bLoad"     title="load .json">📂</button>
+    <button class="ui-btn" id="bHome"     title="back to main menu (city selection)">🏠</button>
     <button class="ui-btn" id="bSettings" title="settings (parameters)">⚙️</button>
 </div>
 
@@ -246,6 +350,12 @@ _envScene.dispose?.();
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 50, 0);
+// Auto-orbit around the hex centre. OrbitControls' formula:
+//   anglePerFrame = (2π / 3600) · autoRotateSpeed  radians
+// → speed = -1 → 0.1° / frame, clockwise viewed from above. Auto-rotate
+// pauses while the user manually drags and resumes on release.
+controls.autoRotate      = true;
+controls.autoRotateSpeed = -1;
 
 // EffectComposer used only when advanced lighting is on — keeps the simple
 // path one render call. SSAOPass emulates the dark cracks ray-traced AO would
@@ -458,6 +568,7 @@ const settlementsGroup = new THREE.Group(); scene.add(settlementsGroup);
 settlementsGroup.visible = false;            // off by default — tile assets show city already
 const tilesGroup       = new THREE.Group(); scene.add(tilesGroup);
 const routesGroup      = new THREE.Group(); scene.add(routesGroup);
+routesGroup.visible    = false;            // off by default — toggle ⛓ in left column to show
 const inspectGroup     = new THREE.Group(); scene.add(inspectGroup);   // close/far influence overlays
 const cityLightsGroup  = new THREE.Group(); scene.add(cityLightsGroup); // night-time merchant-driven city lights
 
@@ -538,22 +649,41 @@ function buildTopo() {
 // ======================================================================
 // Water plane sized to terrain extent; level driven by sim's `waterLevel`.
 // ======================================================================
+// Water plane shaped to the hexagonal map boundary (flat-top regular hex).
+// 6-triangle fan around the hex centre — crops cleanly to the same outline
+// as the topo so the water doesn't overflow into the surrounding "sand box".
+// Geometry sits in world XZ; mesh.position.y rides waterLevel·elevScale.
 function buildWater() {
-    let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
-    for (const v of vertices) {
-        const x = worldXOf(v), z = worldZOf(v);
-        if (x < xMin) xMin = x; if (x > xMax) xMax = x;
-        if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    if (!topoData || !topoData.mapping) return null;
+
+    const hexC = topoData.mapping.hexCenter;
+    const R    = (topoData.mapping.hexBounds.maxX - topoData.mapping.hexBounds.minX) / 2;
+    const cxw  = hexC.x - cx;
+    const czw  = hexC.y - cz;
+
+    // 7 vertices: centre + 6 hex corners at 0°, 60°, 120°, 180°, 240°, 300°.
+    const positions = [cxw, 0, czw];
+    for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3;
+        positions.push(cxw + R * Math.cos(a), 0, czw + R * Math.sin(a));
     }
-    const w = (xMax - xMin) * 1.1, d = (zMax - zMin) * 1.1;
-    const g = new THREE.PlaneGeometry(w, d);
+    const indices = [];
+    for (let i = 0; i < 6; i++) {
+        indices.push(0, 1 + i, 1 + ((i + 1) % 6));
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+
     const m = new THREE.MeshStandardMaterial({
         color: 0x3a7ca5, transparent: true, opacity: 0.6,
         side: THREE.DoubleSide, metalness: 0.2, roughness: 0.35,
     });
+
     const mesh = new THREE.Mesh(g, m);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set((xMin + xMax) / 2, waterLevel * elevScale, (zMin + zMax) / 2);
+    mesh.position.y = waterLevel * elevScale;
     return mesh;
 }
 
@@ -585,53 +715,49 @@ async function loadAtlas() {
     // every atlas mesh participates in the lighting pipeline. Use a Map
     // so multiple meshes sharing the same original material get the same
     // replacement.
+    // Convert EVERY atlas material to MeshLambertMaterial. Lambert is a
+    // simple diffuse-only model — no metalness, no roughness, no IBL —
+    // so it always responds to direct lights + AmbientLight + the
+    // HemisphereLight in a predictable way. The Standard/Physical PBR
+    // path has bitten us repeatedly when materials arrived with HDR
+    // basecolor, sneaky emissive, high metalness, KHR_unlit, etc.;
+    // Lambert sidesteps the whole pile.
+    //
+    // De-duplicated by reference so meshes that shared the same original
+    // glTF material end up sharing the same Lambert replacement.
     const matSwap = new Map();
     gltf.scene.traverse(o => {
         if (!o.isMesh || !o.material) return;
         const orig = o.material;
-        if (orig.isMeshStandardMaterial) return;
-        if (!matSwap.has(orig)) {
-            const replacement = new THREE.MeshStandardMaterial({
-                color:       orig.color ? orig.color.clone() : new THREE.Color(0xcccccc),
-                map:         orig.map || null,
-                transparent: !!orig.transparent,
-                opacity:     orig.opacity != null ? orig.opacity : 1,
-                roughness:   0.8,
-                metalness:   0.0,
-                side:        THREE.DoubleSide,
-            });
-            replacement.name = orig.name;
-            matSwap.set(orig, replacement);
-            console.log('atlas: converted unlit material →', JSON.stringify(orig.name || '?'),
-                        '(' + orig.type + ' → MeshStandardMaterial)');
-        }
-        o.material = matSwap.get(orig);
-    });
+        if (matSwap.has(orig)) { o.material = matSwap.get(orig); return; }
 
-    const seen = new Set();
-    gltf.scene.traverse(o => {
-        if (o.isMesh && o.material && !seen.has(o.material)) {
-            seen.add(o.material);
-            const m = o.material;
-            m.side = THREE.DoubleSide;
-            // Leave shadowSide at default. With side=DoubleSide three.js
-            // picks FrontSide for shadows — flat ground tris in the asset
-            // then write to the shadow map only from the upward-facing
-            // side, and receive-shadow stops fighting against itself.
+        // Clone & clamp baseColor — some exporters write > 1 floats (HDR)
+        // which saturate every fragment regardless of incoming light.
+        const baseColor = orig.color ? orig.color.clone() : new THREE.Color(0xcccccc);
+        baseColor.r = Math.min(1, baseColor.r);
+        baseColor.g = Math.min(1, baseColor.g);
+        baseColor.b = Math.min(1, baseColor.b);
 
-            // trimesh's GLTF exporter occasionally bakes the OBJ diffuse
-            // colour into glTF emissiveFactor, which gives every material
-            // a "self-light" baseline that ignores all lighting controls.
-            // Force emissive off so the day/night cycle and the night-time
-            // city-lights overlay are the only sources of self-illumination.
-            if (m.emissive) m.emissive.setRGB(0, 0, 0);
-            if ('emissiveIntensity' in m) m.emissiveIntensity = 0;
-            // Make sure smoothing in placeTileAsset's per-vertex normals
-            // actually drives the look — flatShading would otherwise force
-            // the renderer to re-derive face normals at fragment time.
-            if (m.flatShading) { m.flatShading = false; m.needsUpdate = true; }
-        }
+        const replacement = new THREE.MeshLambertMaterial({
+            color:       baseColor,
+            map:         orig.map || null,
+            transparent: !!orig.transparent,
+            opacity:     orig.opacity != null ? orig.opacity : 1,
+            side:        THREE.DoubleSide,
+            // emissive defaults to (0,0,0) on a fresh Lambert — exactly
+            // what we want; no glTF-injected self-light will sneak in.
+        });
+        replacement.name = orig.name;
+        matSwap.set(orig, replacement);
+        o.material = replacement;
+
+        console.log('atlas mat:', JSON.stringify(orig.name || '?'),
+                    'origType=' + orig.type,
+                    'origColor=' + (orig.color ? orig.color.getHexString() : '–'),
+                    'origEmissive=' + (orig.emissive ? orig.emissive.getHexString() : '–'),
+                    '→ Lambert ' + baseColor.getHexString());
     });
+    console.log('atlas: converted', matSwap.size, 'unique materials → MeshLambertMaterial');
 }
 
 // ======================================================================
@@ -808,6 +934,83 @@ function setDebugLayer(name) {
 }
 
 // ======================================================================
+// Demonstration mode — cycles through every debug layer with on-screen
+// labels, like the reference 2D simulation's 🎬 button. Each layer
+// shows for DEMO_LAYER_FRAMES frames, then blank for DEMO_GAP_FRAMES,
+// then the next layer.
+// ======================================================================
+let demoMode      = false;
+let demoFrame     = 0;
+let demoLayerIdx  = 0;
+let demoShowing   = true;          // true = a layer is on; false = gap
+const DEMO_LAYER_FRAMES = 180;     // ~3 s at 60 fps
+const DEMO_GAP_FRAMES   = 30;      // ~0.5 s blank between layers
+const DEMO_ORDER = [
+    'elevation', 'defense', 'security', 'farmValue', 'farmerValue',
+    'merchantValue', 'steepness', 'trafficCount', 'habitable', 'occupied',
+];
+function _demoLabelEl() { return document.getElementById('demoLabel'); }
+function setDemoMode(on) {
+    demoMode = !!on;
+    if (demoMode) {
+        demoFrame    = 0;
+        demoLayerIdx = 0;
+        demoShowing  = true;
+        const first = DEMO_ORDER[0];
+        if (DEBUG_LAYERS[first]) {
+            activeDebugLayer = first;
+            if (debugMesh) {
+                debugMesh.visible = true;
+                refreshDebugColors();
+            }
+            const lbl = _demoLabelEl();
+            if (lbl) { lbl.textContent = (DEBUG_LAYERS[first].label || first).toUpperCase(); lbl.classList.add('show'); }
+        }
+    } else {
+        // Turn off the active demo layer and hide the label.
+        if (activeDebugLayer && DEMO_ORDER.indexOf(activeDebugLayer) >= 0) {
+            activeDebugLayer = null;
+            if (debugMesh) debugMesh.visible = false;
+        }
+        const lbl = _demoLabelEl();
+        if (lbl) lbl.classList.remove('show');
+    }
+    // Reflect on the layer-button row so the user sees what's active.
+    const layerBtns = document.querySelectorAll('button[data-layer]');
+    for (const b of layerBtns) {
+        b.classList.toggle('armed', b.dataset.layer === activeDebugLayer);
+    }
+}
+function tickDemoMode() {
+    if (!demoMode) return;
+    demoFrame++;
+    if (demoShowing && demoFrame >= DEMO_LAYER_FRAMES) {
+        demoFrame   = 0;
+        demoShowing = false;
+        // hide layer + label during the gap
+        if (debugMesh) debugMesh.visible = false;
+        const lbl = _demoLabelEl();
+        if (lbl) lbl.classList.remove('show');
+    } else if (!demoShowing && demoFrame >= DEMO_GAP_FRAMES) {
+        demoFrame    = 0;
+        demoShowing  = true;
+        demoLayerIdx = (demoLayerIdx + 1) % DEMO_ORDER.length;
+        const name   = DEMO_ORDER[demoLayerIdx];
+        if (DEBUG_LAYERS[name]) {
+            activeDebugLayer = name;
+            if (debugMesh) {
+                debugMesh.visible = true;
+                refreshDebugColors();
+            }
+            const lbl = _demoLabelEl();
+            if (lbl) { lbl.textContent = (DEBUG_LAYERS[name].label || name).toUpperCase(); lbl.classList.add('show'); }
+            const layerBtns = document.querySelectorAll('button[data-layer]');
+            for (const b of layerBtns) b.classList.toggle('armed', b.dataset.layer === name);
+        }
+    }
+}
+
+// ======================================================================
 // Regional trade route (TODO #2). The 2D simulation hard-codes start/end
 // vertices per city; here we pick them randomly each run, but only from
 // "true edge" vertices — those that appear in only 1 or 2 tiles, i.e.
@@ -923,6 +1126,90 @@ function simStep() {
 function simStepN(n) {
     for (let i = 0; i < n; i++) simStep();
     postSimStep();
+}
+
+// Auto-restart bookkeeping: capture the habitable-tile pool size once at
+// the start of a session so we can detect when the city has filled most
+// of it (≥ 60% used) and restart automatically during auto-spawn.
+let initialHabitableCount = 0;
+const AUTO_RESTART_FRACTION = 0.6;
+
+// Full clean-slate restart — same map, but every per-vertex sim value
+// and every per-edge counter goes back to where it would be on a
+// freshly-loaded JSON. The reference's clearSettlements + clearRoutes
+// only handle some of this; the rest (occupiedByRoute, occupiedBy,
+// attrition, farmerNr, _security, _trafficValue, neighbor.trafficCount,
+// neighbor.travelCount) we wipe explicitly.
+function restartSimulation() {
+    // 1. Helper-driven clears (settlements, castleVertices, habitable,
+    //    routes, vertex.traffic, defense, farmValue, merchantValue,
+    //    security, farmerValue, occupied, buffer, castleAnnex, garden).
+    if (typeof clearSettlements === 'function') clearSettlements();
+    if (typeof clearRoutes      === 'function') clearRoutes();
+
+    // 2. Per-vertex + per-edge fields the helpers miss.
+    if (Array.isArray(vertices)) {
+        for (const v of vertices) {
+            v.occupiedBy      = null;
+            v.occupiedByRoute = false;
+            v.attrition       = 0;
+            v.farmerNr        = 0;
+            v._security       = 1;          // default baseline
+            v._trafficValue   = 0;
+            v.merchantValue   = 0;
+            v.traffic         = 0;
+            v.trafficValue    = 0;
+            v.farmerValue     = 0;
+            v.farmValue       = 0;
+            v.defense         = 0;
+            v.castleAnnex     = null;
+            v.garden          = null;
+            // Reset cached neighbour graphs so calculateFarmerValues
+            // recomputes from scratch on the next spawn step.
+            v.vincinityNeighbors = undefined;
+            v.floodedNeighbors   = undefined;
+            // Per-edge: traffic accumulation + path-dependency travel count
+            if (Array.isArray(v.neighbors)) {
+                for (const n of v.neighbors) {
+                    n.trafficCount = 0;
+                    n.travelCount  = 0;
+                }
+            }
+        }
+    }
+
+    // 3. Re-derive simulation values from the now-clean vertex state.
+    //    initializeSimulationValues recomputes steepness; initializeHabitable
+    //    rebuilds the habitable[] pool and refreshes defense / farmValue
+    //    starting from zero.
+    if (typeof initializeSimulationValues === 'function') initializeSimulationValues();
+    if (typeof initializeHabitable        === 'function') initializeHabitable();
+
+    // 4. Re-establish the regional trade route (sets tradeDestination1/2
+    //    afresh and creates a new hard-coded route in routes[]).
+    if (typeof setupRegionalRoute === 'function') setupRegionalRoute();
+
+    // 5. Top-level UI/sim flags.
+    isFirstSpawn          = true;
+    initialHabitableCount = 0;
+
+    // 6. Visual rebuild — wipe tile cache, then let the syncs paint
+    //    everything fresh from the freshly-zeroed state.
+    if (typeof lastSigByTileId !== 'undefined' && lastSigByTileId.clear) {
+        lastSigByTileId.clear();
+    }
+    if (typeof tileObjects !== 'undefined') {
+        for (const obj of tileObjects.values()) tilesGroup.remove(obj);
+        tileObjects.clear();
+    }
+    if (typeof syncSettlements    === 'function') syncSettlements();
+    if (typeof syncRoutes         === 'function') syncRoutes();
+    if (typeof syncTiles          === 'function') syncTiles();
+    if (typeof refreshDebugColors === 'function') refreshDebugColors();
+    if (typeof buildCityLights    === 'function') buildCityLights();
+    if (typeof window.__hudRefresh === 'function') window.__hudRefresh();
+    if (advancedMode) renderer.shadowMap.needsUpdate = true;
+    console.log('[sim] restarted: clean vertex state, new regional route');
 }
 
 // Post-step bookkeeping that the reference 2D sim doesn't do but the user
@@ -1578,11 +1865,12 @@ function syncTiles() {
 // ======================================================================
 // Main init
 // ======================================================================
-async function init() {
-    setStatus('fetching topo_json/large_rome.json ...');
+async function init(topoUrl) {
+    topoUrl = topoUrl || 'topo_json/large_rome.json';
+    setStatus('fetching ' + topoUrl + ' ...');
     let json;
     try {
-        json = await fetch('topo_json/large_rome.json').then(r => {
+        json = await fetch(topoUrl).then(r => {
             if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
             return r.json();
         });
@@ -1648,6 +1936,10 @@ async function init() {
     syncRoutes();
 
     initialized = true;
+    // Advanced lighting (day/night cycle, shadows, IBL) is on by default.
+    // Calling this BEFORE setupHud so the ✨ button picks up the armed
+    // state during its initial bindVisibility sync.
+    setAdvancedMode(true);
     setupHud();
 }
 
@@ -1689,6 +1981,21 @@ function setupHud() {
         // tell the cached shadow map to redraw next frame.
         if (advancedMode && lightParams.rotationSpeed === 0) renderer.shadowMap.needsUpdate = true;
         console.log(`spawn ${n}: sim ${(t1-t0).toFixed(0)}ms, tiles +${r?.placed||0} placed, ${r?.missing||0} missing`);
+
+        // Capture the initial habitable pool the first time it's populated,
+        // then trigger an auto-restart once the city has filled ≥ 60%
+        // of it. Only fires while auto-spawn is running — manual spawns
+        // never auto-restart.
+        if (initialHabitableCount === 0 && habitable && habitable.length > 0) {
+            initialHabitableCount = habitable.length;
+        }
+        if (autoTimer && initialHabitableCount > 0) {
+            const used = 1 - habitable.length / initialHabitableCount;
+            if (used >= AUTO_RESTART_FRACTION) {
+                console.log(`[sim] habitable used ${(used*100).toFixed(0)}% — auto restart`);
+                restartSimulation();
+            }
+        }
     }
 
     $('bSpawn1').onclick  = () => spawn(1);
@@ -1700,19 +2007,7 @@ function setupHud() {
         syncTiles();   // routes set occupiedByRoute → tile signatures change
         refresh();
     };
-    $('bClear').onclick = () => {
-        clearSettlements();
-        clearRoutes();
-        isFirstSpawn = true;   // next spawn step is a Lord again
-        // wipe per-tile signature cache so syncTiles redraws all
-        lastSigByTileId.clear();
-        for (const obj of tileObjects.values()) tilesGroup.remove(obj);
-        tileObjects.clear();
-        syncSettlements();
-        syncRoutes();
-        syncTiles();
-        refresh();
-    };
+    $('bClear').onclick = () => restartSimulation();
     $('bResync').onclick = () => {
         lastSigByTileId.clear();
         for (const obj of tileObjects.values()) tilesGroup.remove(obj);
@@ -1721,7 +2016,7 @@ function setupHud() {
     };
 
     let autoTimer = null;
-    let autoMs    = 500;
+    let autoMs    = 100;
     const lAutoMs = $('lAutoMs'), iAutoMs = $('iAutoMs');
     iAutoMs.value = autoMs; lAutoMs.textContent = autoMs;
     function startAuto() {
@@ -1938,6 +2233,14 @@ function setupHud() {
     bindVisibility('bToggleTopo',   () => topoMesh.visible,         v => topoMesh.visible         = v);
     bindVisibility('bToggleWater',  () => waterMesh.visible,        v => waterMesh.visible        = v);
     bindVisibility('bAdvanced',     () => advancedMode,             v => setAdvancedMode(v));
+    bindVisibility('bDemo',         () => demoMode,                 v => setDemoMode(v));
+    // Back-to-menu: full page reload returns the title screen and lets the
+    // user pick another city. Cleanest way to drop all sim/scene state.
+    $('bHome').onclick = () => {
+        if (confirm('Return to city-selection screen? Current simulation will be lost.')) {
+            location.reload();
+        }
+    };
 
     // Debug-layer buttons (left column, statically rendered with data-layer).
     // Mutually exclusive — clicking the active layer turns it off.
@@ -2255,12 +2558,49 @@ window.toggleShadowHelper = function () {
         }
         applyPhaseLighting();
     }
+    tickDemoMode();
     if (advancedMode) composer.render();
     else              renderer.render(scene, camera);
     requestAnimationFrame(loop);
 })();
 
-init().catch(e => console.error(e));
+// Title-screen flow: hold init until the user picks a city. The audio
+// element can only start after a user gesture (most browsers block
+// autoplay until then), so the same click that picks the city also
+// starts the music.
+const titleScreen = document.getElementById('titleScreen');
+const bgMusic     = document.getElementById('bgMusic');
+const bAudio      = document.getElementById('bAudio');
+let booted = false;
+
+bgMusic.volume = 0.5;
+function setAudioOn(on) {
+    if (on) {
+        bgMusic.play().catch(() => { /* autoplay blocked — wait for next gesture */ });
+        bAudio.textContent = '🔊';
+        bAudio.classList.add('armed');
+    } else {
+        bgMusic.pause();
+        bAudio.textContent = '🔇';
+        bAudio.classList.remove('armed');
+    }
+}
+bAudio.onclick = () => setAudioOn(bgMusic.paused);
+
+for (const tile of document.querySelectorAll('.city-tile')) {
+    tile.onclick = () => {
+        if (booted) return;
+        booted = true;
+        titleScreen.classList.add('hidden');
+        const url = tile.dataset.topo;
+        setAudioOn(true);   // user gesture — autoplay is allowed now
+        init(url).catch(e => {
+            console.error(e);
+            booted = false;
+            titleScreen.classList.remove('hidden');
+        });
+    };
+}
 </script>
 </body>
 </html>
