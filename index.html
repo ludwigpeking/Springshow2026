@@ -6,23 +6,167 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #15191e;
                font-family: ui-monospace, Menlo, Consolas, monospace; color: #ddd; font-size: 12px; }
-  #hud { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6);
-         padding: 10px 12px; border-radius: 6px; min-width: 240px; line-height: 1.6; max-height: 95vh; overflow: auto; }
-  #hud h3 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #fff; }
-  #hud .stat { color: #8aa; }
-  #hud button { background: #2a3540; color: #ddd; border: 1px solid #3a4854;
-                padding: 4px 8px; cursor: pointer; border-radius: 3px; font: inherit; margin: 2px 2px 2px 0; }
-  #hud button:hover { background: #354352; }
-  #hud button.armed { background: #4d6177; border-color: #6a8aa6; color: #fff; }
-  #hud label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
-  #hud input[type=range] { flex: 1; }
+
+  /* Top bar — counts + inspect output */
+  #topBar { position: absolute; top: 10px; left: 60px; right: 60px;
+            background: rgba(0,0,0,0.55); padding: 6px 12px; border-radius: 6px;
+            color: #cfd6dd; font-size: 11px; line-height: 1.55; max-height: 95px;
+            overflow-y: auto; z-index: 5; pointer-events: none; }
+  #topBar > * { pointer-events: auto; }
+  #counts { color: #8aa; }
+
+  /* Left + right vertical button columns */
+  .ui-col { position: absolute; top: 10px; display: flex; flex-direction: column; gap: 3px;
+            background: rgba(0,0,0,0.55); padding: 6px; border-radius: 6px; z-index: 10; }
+  #leftCol  { left:  10px; }
+  #rightCol { right: 10px; }
+  .ui-btn { width: 38px; height: 38px; padding: 0; margin: 0;
+            background: #2a3540; color: #ddd; border: 1px solid #3a4854;
+            cursor: pointer; border-radius: 50%;
+            font-size: 18px; line-height: 1;
+            display: flex; align-items: center; justify-content: center; }
+  .ui-btn.text { font-size: 12px; font-family: inherit; }
+  .ui-btn:hover { background: #354352; }
+  .ui-btn.armed { background: #4d6177; border-color: #6a8aa6; color: #fff; }
+  /* Auto-simulate gets a larger pill so it's visually the primary action */
+  #bAuto { width: 52px; height: 52px; font-size: 24px; margin: 4px 0; }
+  .ui-sep { height: 1px; background: #3a4854; margin: 4px 2px; }
+
+  /* Settings popup (toggled by ⚙). Holds every parameter slider */
+  #settingsPanel { position: absolute; top: 60px; right: 60px; bottom: 10px;
+                   width: 360px; background: rgba(20,30,40,0.95);
+                   padding: 30px 16px 12px 16px; border-radius: 6px;
+                   overflow-y: auto; z-index: 20; color: #cfd6dd; font-size: 12px; }
+  #settingsPanel.hidden { display: none; }
+  #settingsPanel h3 { margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #fff; }
+  #settingsPanel #bSettingsClose { position: absolute; top: 6px; right: 6px; font-size: 14px;
+                                   width: 28px; height: 28px; border-radius: 4px; }
+  #settingsPanel hr { border: none; border-top: 1px solid #3a4854; margin: 10px 0; }
+  #settingsPanel label { display: flex; justify-content: space-between; align-items: center;
+                          gap: 8px; margin-top: 4px; }
+  #settingsPanel input[type=range] { flex: 1; }
+  #settingsPanel input[type=number] { width: 60px; }
   .row { margin-top: 6px; }
-  .ok { color: #7be8a4; }
+  .ok  { color: #7be8a4; }
   .bad { color: #ff8a8a; }
 </style>
 </head>
 <body>
-<div id="hud">loading...</div>
+<div id="topBar"><span id="counts">loading...</span> <span id="inspectInfo" style="display:none"></span></div>
+
+<!-- Left column: vertex inspector, visibility toggles, debug-value layers. -->
+<div id="leftCol" class="ui-col">
+    <button class="ui-btn" data-mode="inspect"  title="🔍 inspect — click any vertex/tile to read its values">🔍</button>
+    <div class="ui-sep"></div>
+    <button class="ui-btn" id="bToggleTiles"   title="city tiles">🏙️</button>
+    <button class="ui-btn" id="bToggleSettle"  title="settlement markers">🏘️</button>
+    <button class="ui-btn" id="bToggleRoutes"  title="route polylines">⛓</button>
+    <button class="ui-btn" id="bToggleTopo"    title="topography mesh (hidden by default)">🗺️</button>
+    <button class="ui-btn" id="bToggleWater"   title="water plane">🌊</button>
+    <button class="ui-btn" id="bAdvanced"      title="advanced lighting (shadows + day/night cycle + city lights)">✨</button>
+    <div class="ui-sep"></div>
+    <button class="ui-btn" data-layer="elevation"     title="elevation">⛰️</button>
+    <button class="ui-btn" data-layer="defense"       title="defense">🛡️</button>
+    <button class="ui-btn" data-layer="security"      title="security">👁️</button>
+    <button class="ui-btn" data-layer="farmValue"     title="farm value">🌾</button>
+    <button class="ui-btn" data-layer="farmerValue"   title="farmer value">🏡</button>
+    <button class="ui-btn" data-layer="merchantValue" title="merchant value">💰</button>
+    <button class="ui-btn" data-layer="steepness"     title="steepness">📐</button>
+    <button class="ui-btn" data-layer="trafficCount"  title="traffic count">🔢</button>
+    <button class="ui-btn" data-layer="habitable"     title="habitable">🟢</button>
+    <button class="ui-btn" data-layer="occupied"      title="occupied">🔴</button>
+</div>
+
+<!-- Right column: click-to-place modes, spawn actions, save/load, settings. -->
+<div id="rightCol" class="ui-col">
+    <button class="ui-btn" data-mode="castle"   title="🏯 click-to-place castle (Lord)">🏯</button>
+    <button class="ui-btn" data-mode="farmer"   title="👨‍🌾 click-to-place farmer">👨‍🌾</button>
+    <button class="ui-btn" data-mode="merchant" title="🏪 click-to-place merchant">🏪</button>
+    <button class="ui-btn" data-mode="road"     title="🛤️ road — click two vertices to connect them">🛤️</button>
+    <button class="ui-btn" data-mode="delete"   title="🗑️ delete owner / route">🗑️</button>
+    <div class="ui-sep"></div>
+    <button class="ui-btn"      id="bAuto"    title="auto-spawn (toggle)">▶️</button>
+    <button class="ui-btn text" id="bSpawn1"  title="spawn 1 step">+1</button>
+    <button class="ui-btn text" id="bSpawn10" title="spawn 10 steps">+10</button>
+    <button class="ui-btn text" id="bSpawn50" title="spawn 50 steps">+50</button>
+    <div class="ui-sep"></div>
+    <button class="ui-btn" id="bRoute"   title="add a random route">🚏</button>
+    <button class="ui-btn" id="bResync"  title="re-sync tile assets">🔄</button>
+    <button class="ui-btn" id="bClear"   title="clear all settlements & routes">🧹</button>
+    <div class="ui-sep"></div>
+    <button class="ui-btn" id="bSave"     title="save simulation as .json">💾</button>
+    <button class="ui-btn" id="bLoad"     title="load .json">📂</button>
+    <button class="ui-btn" id="bSettings" title="settings (parameters)">⚙️</button>
+</div>
+
+<!-- Settings popup. Hidden until ⚙️ is clicked. -->
+<div id="settingsPanel" class="hidden">
+    <button class="ui-btn close" id="bSettingsClose" title="close">✕</button>
+    <h3>⚙ Parameters</h3>
+
+    <div class="row">
+      <strong>spawn probability</strong> (% — auto-normalised)
+      <label>Lord <span id="lpL"></span><input id="ipL" type="range" min="0" max="100" step="1"></label>
+      <label>Farmer <span id="lpF"></span><input id="ipF" type="range" min="0" max="100" step="1"></label>
+      <label>Merchant <span id="lpM"></span><input id="ipM" type="range" min="0" max="100" step="1"></label>
+    </div>
+
+    <div class="row">
+      <strong>auto-spawn speed</strong>
+      <label>step every <span id="lAutoMs"></span> ms<input id="iAutoMs" type="range" min="50" max="2000" step="50"></label>
+    </div>
+
+    <div class="row">
+      <strong>scene</strong>
+      <label>elev × <span id="lE"></span><input id="iE" type="range" min="0.01" max="5" step="0.01"></label>
+      <label>water <span id="lW"></span> m<input id="iW" type="range" min="0" max="100" step="0.5"></label>
+    </div>
+
+    <div class="row">
+      <strong>pathfinding cost</strong>
+      <label>downhill × <span id="lDown"></span><input id="iDown" type="range" min="0"   max="2"  step="0.05"></label>
+      <label>flat cost <span id="lFlat"></span><input id="iFlat" type="range" min="0.5" max="10" step="0.1"></label>
+      <label>traffic w. <span id="lTraf"></span><input id="iTraf" type="range" min="1"   max="40" step="1"></label>
+    </div>
+
+    <div class="row">
+      <strong>movement cost</strong> (rebuilds edges)
+      <label>mode change <span id="lMode"></span><input id="iMode" type="range" min="0"     max="200" step="5"></label>
+      <label>water transport <span id="lWtr"></span><input id="iWtr" type="range" min="0.001" max="1"  step="0.005"></label>
+    </div>
+
+    <div class="row">
+      <strong>influence range</strong>
+      <label>close <span id="lShort"></span><input id="iShort" type="range" min="20"  max="400"  step="10"></label>
+      <label>far <span id="lMid"></span><input id="iMid" type="range" min="100" max="1000" step="20"></label>
+    </div>
+
+    <div class="row">
+      <strong>lighting</strong> (live; advanced toggle resets)
+      <label title="renderer.toneMappingExposure">exposure <span id="lExp"></span><input id="iExp" type="range" min="0" max="3"    step="0.02"></label>
+      <label title="material.envMapIntensity">env intensity <span id="lEnv"></span><input id="iEnv" type="range" min="0" max="0.05" step="0.001"></label>
+      <label title="DirectionalLight intensity">sun <span id="lSun"></span><input id="iSun" type="range" min="0" max="15" step="0.1"></label>
+      <label title="AmbientLight">ambient <span id="lAmb"></span><input id="iAmb" type="range" min="0" max="3" step="0.02"></label>
+      <label title="sun.shadow.radius">shadow blur <span id="lSr"></span><input id="iSr" type="range" min="0" max="10" step="0.1"></label>
+      <label title="sun.shadow.intensity — 0 = no shadow, 1 = pitch black">shadow opacity <span id="lShI"></span><input id="iShI" type="range" min="0" max="1" step="0.02"></label>
+      <label title="sun azimuth, deg">sun azimuth <span id="lAz"></span><input id="iAz" type="range" min="0" max="360" step="1"></label>
+      <label title="sun altitude, deg above horizon">sun altitude <span id="lAl"></span><input id="iAl" type="range" min="5" max="89" step="1"></label>
+      <label title="cycle speed, degrees per frame (0 = paused)">rotation speed <span id="lRot"></span><input id="iRot" type="range" min="0" max="5" step="0.05"></label>
+      <label title="HDR brightness multiplier on the additive night-time city lights">city lights <span id="lCity"></span><input id="iCity" type="range" min="0" max="6" step="0.1"></label>
+    </div>
+
+    <div class="row">
+      <strong>day / night anchor colours</strong>
+      <label>day sun     <input type="color" id="cDaySun"></label>
+      <label>dusk sun    <input type="color" id="cDuskSun"></label>
+      <label>night sun   <input type="color" id="cNightSun"></label>
+      <label>day env     <input type="color" id="cDayEnv"></label>
+      <label>dusk env    <input type="color" id="cDuskEnv"></label>
+      <label>night env   <input type="color" id="cNightEnv"></label>
+    </div>
+</div>
+
+<input id="iLoadFile" type="file" accept=".json" style="display:none">
 
 <!-- Sim files (classic scripts, evaluated in order). Shims define p5-style
      globals (random, floor, select, ...) so the sim files don't need editing. -->
@@ -63,18 +207,25 @@ import { SSAOPass }         from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass }       from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment }  from 'three/addons/environments/RoomEnvironment.js';
 
-const hud = document.getElementById('hud');
-hud.innerHTML = 'building scene...';
+const countsEl = document.getElementById('counts');
+function setStatus(html) { countsEl.innerHTML = html; }
+setStatus('building scene...');
 
 // ======================================================================
 // Three.js scene scaffolding
 // ======================================================================
 const scene    = new THREE.Scene();
 scene.background = new THREE.Color(0x182028);
-scene.fog        = new THREE.Fog(0x182028, 1500, 4500);
+// Fog removed for the near-orthographic camera — at FOV=4 / distance
+// ~15400 it just tints the whole frame uniformly without adding any
+// distance cue. Re-enable as `new Fog(...)` if you want haze later.
+scene.fog        = null;
 
-const camera   = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 8000);
-camera.position.set(700, 700, 900);
+// FOV=12, distance ≈ 1800. View radius = 1800·tan(6°) ≈ 189 — the
+// camera frames the centre of the hex tightly rather than the whole
+// map. Pull back / orbit out via mouse wheel to see further.
+const camera   = new THREE.PerspectiveCamera(12, innerWidth / innerHeight, 50, 4500);
+camera.position.set(890, 1050, 1160);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
@@ -126,9 +277,128 @@ renderer.domElement.addEventListener('pointerup', e => {
     if (performance.now() - _downT > 350) return;
     if (Math.abs(e.clientX - _downX) > 5) return;
     if (Math.abs(e.clientY - _downY) > 5) return;
+    if (mouseMode === 'inspect') {
+        const v = pickVertex(e.clientX, e.clientY);
+        const t = pickTile(e.clientX, e.clientY);
+        showInspectInfo(v, t);
+        showInspectInfluence(v);
+        return;
+    }
     const v = pickVertex(e.clientX, e.clientY);
     if (v) applyMouseMode(v);
 });
+
+// When inspect-mode picks a vertex, paint translucent overlays on every
+// tile that is reached by that vertex's CLOSE (vincinityNeighbors) and
+// FAR (floodedNeighbors) influence sets — like the 2D reference's vertex
+// inspector. Two merged BufferGeometries: one per range. Always-on-top.
+const INFLUENCE_COLOR_FAR   = 0xff66cc;   // pink — wider, fainter
+const INFLUENCE_COLOR_CLOSE = 0x66ddff;   // cyan — tighter, more opaque
+function clearInspectOverlay() {
+    while (inspectGroup.children.length) {
+        const c = inspectGroup.children.pop();
+        c.geometry?.dispose();
+        c.material?.dispose();
+        inspectGroup.remove(c);
+    }
+}
+function showInspectInfluence(vertex) {
+    clearInspectOverlay();
+    if (!vertex) return;
+
+    const closeSet = new Set([vertex.index]);
+    if (Array.isArray(vertex.vincinityNeighbors)) {
+        for (const v of vertex.vincinityNeighbors) closeSet.add(v.index);
+    }
+    const farSet = new Set([vertex.index]);
+    if (Array.isArray(vertex.floodedNeighbors)) {
+        for (const v of vertex.floodedNeighbors) farSet.add(v.index);
+    }
+
+    const closeTiles = [];
+    const farOnlyTiles = [];
+    for (const t of tiles) {
+        let inClose = false, inFar = false;
+        for (const idx of t.vertexIndices) {
+            if (!inClose && closeSet.has(idx)) inClose = true;
+            if (!inFar   && farSet.has(idx))   inFar   = true;
+            if (inClose && inFar) break;
+        }
+        if (inClose) closeTiles.push(t);
+        else if (inFar) farOnlyTiles.push(t);
+    }
+
+    const buildOverlay = (tileList, hexColor, opacity, lift, renderOrder) => {
+        if (!tileList.length) return;
+        const positions = [];
+        const indices   = [];
+        let v = 0;
+        for (const t of tileList) {
+            const v0 = vertexByIndex.get(t.vertexIndices[0]);
+            const v1 = vertexByIndex.get(t.vertexIndices[1]);
+            const v2 = vertexByIndex.get(t.vertexIndices[2]);
+            const v3 = vertexByIndex.get(t.vertexIndices[3]);
+            if (!v0 || !v1 || !v2 || !v3) continue;
+            positions.push(
+                worldXOf(v0), worldYOf(v0) + lift, worldZOf(v0),
+                worldXOf(v1), worldYOf(v1) + lift, worldZOf(v1),
+                worldXOf(v2), worldYOf(v2) + lift, worldZOf(v2),
+                worldXOf(v3), worldYOf(v3) + lift, worldZOf(v3),
+            );
+            indices.push(v, v + 1, v + 2,  v, v + 2, v + 3);
+            v += 4;
+        }
+        if (!v) return;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        g.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+            color:        hexColor,
+            transparent:  true,
+            opacity:      opacity,
+            side:         THREE.DoubleSide,
+            depthWrite:   false,
+            depthTest:    false,
+        });
+        const mesh = new THREE.Mesh(g, mat);
+        mesh.renderOrder = renderOrder;
+        inspectGroup.add(mesh);
+    };
+
+    // Far first (lower renderOrder, drawn first), close on top.
+    buildOverlay(farOnlyTiles, INFLUENCE_COLOR_FAR,   0.20, 1.5, 1100);
+    buildOverlay(closeTiles,   INFLUENCE_COLOR_CLOSE, 0.45, 1.7, 1101);
+}
+
+function showInspectInfo(v, t) {
+    const el = document.getElementById('inspectInfo');
+    if (!el) return;
+    if (!v && !t) { el.style.display = 'none'; return; }
+    const lines = [];
+    if (v) {
+        const sym = getVertexSymbol(v);
+        const occ = v.occupiedBy
+            ? v.occupiedBy.profession
+            : v.castleAnnex
+                ? 'castle annex'
+                : v.occupiedByRoute ? 'route' : '–';
+        lines.push(
+            `<b>vertex</b> #${v.index} → <b>"${sym}"</b>` +
+            `<br>&nbsp;&nbsp;elev=${v.elevation.toFixed(1)} m` +
+            `&nbsp;&nbsp;defense=${v.defense.toFixed(2)}` +
+            `&nbsp;&nbsp;security=${(v._security ?? 0).toFixed(2)}` +
+            `<br>&nbsp;&nbsp;occupied: ${occ}` +
+            `&nbsp;&nbsp;water=${v.water}&nbsp;&nbsp;habitable=${v.habitable}`
+        );
+    }
+    if (t) {
+        const sig = tileSignature(t);
+        lines.push(`<b>tile</b> #${t.id} → <b>"${sig}"</b>` +
+                   `&nbsp;&nbsp;corners=[${t.vertexIndices.join(', ')}]`);
+    }
+    el.innerHTML = lines.join('<br>');
+    el.style.display = 'block';
+}
 renderer.domElement.addEventListener('pointermove', e => {
     if (!mouseMode) { if (hoverMarker) hoverMarker.visible = false; return; }
     showHoverAt(pickVertex(e.clientX, e.clientY));
@@ -144,7 +414,11 @@ scene.add(sun.target);
 // Shadow camera frustum sized for the topo extent (~ ±900 in XZ, 0..600 in Y
 // after exaggeration). Generous bias keeps acne off the gentle slopes.
 sun.castShadow                 = true;
-sun.shadow.mapSize.set(4096, 4096);
+// 8192² shadow map — high-quality static shadows for advanced mode. When
+// `renderer.shadowMap.autoUpdate = false` (set when day-mode is OFF), this
+// renders once per scene change instead of every frame, so the per-frame
+// cost is small even at this size.
+sun.shadow.mapSize.set(8192, 8192);
 // Tighten the shadow camera to the actual map extent — smaller frustum =
 // better depth precision per shadow texel.
 sun.shadow.camera.near         = 200;
@@ -159,17 +433,42 @@ sun.shadow.camera.bottom       = -700;
 // side. A small positive bias works better than negative for our orientation.
 sun.shadow.bias                = -0.001;
 sun.shadow.normalBias          = 0.5;
-const fill = new THREE.DirectionalLight(0x88aacc, 0.25);
-fill.position.set(-400, 300, -500);
-scene.add(fill);
+// Sky/ground-tinted ambient — the actually colour-tweakable handle for
+// the day/night cycle's environmental light. PMREM env stays for IBL.
+// (No "fill" DirectionalLight — the hemi covers that job, and a second
+// directional light was producing a phantom specular highlight on water.)
+const hemi = new THREE.HemisphereLight(0xb0d8ff, 0x222233, 0.0);
+scene.add(hemi);
+
+// Shadow-fill light: a non-shadow-casting twin of `sun`. Three.js r160
+// has no LightShadow.intensity — this is how we emulate it. The two
+// lights share total intensity:
+//   sun.intensity        = total · shadowIntensity     (casts shadow)
+//   shadowFill.intensity = total · (1 - shadowIntensity)  (no shadow)
+// Lit fragments get both → full intensity. Shadowed fragments get only
+// shadowFill → fraction (1 - shadowIntensity) of full.
+const shadowFill = new THREE.DirectionalLight(0xffeedd, 0);
+shadowFill.castShadow = false;
+shadowFill.position.copy(sun.position);
+shadowFill.target.position.set(0, 0, 0);
+scene.add(shadowFill);
+scene.add(shadowFill.target);
 
 const settlementsGroup = new THREE.Group(); scene.add(settlementsGroup);
+settlementsGroup.visible = false;            // off by default — tile assets show city already
 const tilesGroup       = new THREE.Group(); scene.add(tilesGroup);
 const routesGroup      = new THREE.Group(); scene.add(routesGroup);
+const inspectGroup     = new THREE.Group(); scene.add(inspectGroup);   // close/far influence overlays
+const cityLightsGroup  = new THREE.Group(); scene.add(cityLightsGroup); // night-time merchant-driven city lights
 
 let topoMesh = null, waterMesh = null;
+// Cached smooth topo normals, one per JSON vertex. Used by placeTileAsset
+// to filter the bottom of each cube asset so that adjacent tiles share
+// matching normals along their corner/edge boundaries — gets rid of the
+// per-cell seam that looked like a faceted ground.
+let topoSmoothNormals = null;
 let cx = 0, cz = 0;
-let elevScale = 1.0;
+let elevScale = 0.3;
 // Atlas asset model: 30 × 30 × 30 m block with origin at the BOTTOM CENTER —
 // so local positions live in [-15, +15] × [0, 30] × [-15, +15]. The deformation
 // below maps that bounding box into each cell's skewed prism on the topo.
@@ -193,6 +492,18 @@ function worldVec3(v, out) {
 // ======================================================================
 // Topo mesh (smooth, indexed) — same approach as topo_test.html
 // ======================================================================
+function cacheTopoNormals() {
+    if (!topoMesh) return;
+    const norm = topoMesh.geometry.getAttribute('normal');
+    const N = vertices.length;
+    topoSmoothNormals = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+        topoSmoothNormals[i*3]     = norm.getX(i);
+        topoSmoothNormals[i*3 + 1] = norm.getY(i);
+        topoSmoothNormals[i*3 + 2] = norm.getZ(i);
+    }
+}
+
 function buildTopo() {
     const positions = new Float32Array(vertices.length * 3);
     for (let i = 0; i < vertices.length; i++) {
@@ -267,6 +578,36 @@ async function loadAtlas() {
     // (and the topo / neighbouring buildings show no shadow under them).
     // Setting shadowSide=DoubleSide forces both sides to contribute to the
     // shadow map at ~2× shadow-render cost — fine, and what we want here.
+    // Some materials may arrive as MeshBasicMaterial (e.g. trimesh
+    // emitting KHR_materials_unlit, or any glTF that lacks PBR data). Those
+    // are *unlit* — they ignore lights entirely, so they wouldn't respond
+    // to the day/night cycle. Convert to MeshStandardMaterial up front so
+    // every atlas mesh participates in the lighting pipeline. Use a Map
+    // so multiple meshes sharing the same original material get the same
+    // replacement.
+    const matSwap = new Map();
+    gltf.scene.traverse(o => {
+        if (!o.isMesh || !o.material) return;
+        const orig = o.material;
+        if (orig.isMeshStandardMaterial) return;
+        if (!matSwap.has(orig)) {
+            const replacement = new THREE.MeshStandardMaterial({
+                color:       orig.color ? orig.color.clone() : new THREE.Color(0xcccccc),
+                map:         orig.map || null,
+                transparent: !!orig.transparent,
+                opacity:     orig.opacity != null ? orig.opacity : 1,
+                roughness:   0.8,
+                metalness:   0.0,
+                side:        THREE.DoubleSide,
+            });
+            replacement.name = orig.name;
+            matSwap.set(orig, replacement);
+            console.log('atlas: converted unlit material →', JSON.stringify(orig.name || '?'),
+                        '(' + orig.type + ' → MeshStandardMaterial)');
+        }
+        o.material = matSwap.get(orig);
+    });
+
     const seen = new Set();
     gltf.scene.traverse(o => {
         if (o.isMesh && o.material && !seen.has(o.material)) {
@@ -278,15 +619,17 @@ async function loadAtlas() {
             // then write to the shadow map only from the upward-facing
             // side, and receive-shadow stops fighting against itself.
 
-            // Capture the material's albedo (diffuse colour) as the
-            // emissive source so the HUD `emissive` slider can scale it
-            // up later — at slider=1 every asset glows with its own
-            // colour as a flat-shaded fallback. trimesh's GLTF often
-            // leaves emissive at (0,0,0), which made the previous-attempt
-            // slider do nothing; using `m.color` always has signal.
-            m.userData._origEmissive = m.color ? m.color.clone() : new THREE.Color(0, 0, 0);
+            // trimesh's GLTF exporter occasionally bakes the OBJ diffuse
+            // colour into glTF emissiveFactor, which gives every material
+            // a "self-light" baseline that ignores all lighting controls.
+            // Force emissive off so the day/night cycle and the night-time
+            // city-lights overlay are the only sources of self-illumination.
             if (m.emissive) m.emissive.setRGB(0, 0, 0);
             if ('emissiveIntensity' in m) m.emissiveIntensity = 0;
+            // Make sure smoothing in placeTileAsset's per-vertex normals
+            // actually drives the look — flatShading would otherwise force
+            // the renderer to re-derive face normals at fragment time.
+            if (m.flatShading) { m.flatShading = false; m.needsUpdate = true; }
         }
     });
 }
@@ -328,22 +671,24 @@ function syncSettlements() {
 }
 
 // ======================================================================
-// Routes (Phase 4)
-// Each route is rendered as a Line whose vertices are the route's path
-// vertices, lifted slightly above the topo so it reads on the surface.
-// Color cycles per route so adjacent routes are easy to tell apart.
+// Edge-traffic rendering. Per-route lines are gone; each unique edge
+// (vertex-to-neighbor pair) gets a flat quad on top of the topo whose
+// width and colour are driven by that edge's accumulated `trafficCount`.
+// All edges merge into one BufferGeometry → one draw call.
+//
+//   width = clamp(EDGE_WIDTH_MIN, EDGE_WIDTH_MAX, ln(1+trafficCount) · EDGE_WIDTH_SCALE)
+//   colour interpolates EDGE_COLOR_LOW → EDGE_COLOR_HIGH on trafficCount/maxObserved
+//
+// Width uses a log scale so the regional trade route (often hundreds of
+// trafficCount) doesn't dwarf the much smaller per-merchant feeders.
+// Edges are de-duplicated by emitting only when v.index < neighbor.vertexIndex.
 // ======================================================================
-const ROUTE_COLORS = [0xff6644, 0x44aaff, 0xffdd44, 0xaa44ff, 0x66dd99, 0xff88cc];
-const routeMatCache = new Map();
-function routeMat(idx) {
-    const c = ROUTE_COLORS[idx % ROUTE_COLORS.length];
-    if (!routeMatCache.has(c)) {
-        // linewidth >1 is ignored on most WebGL drivers; switch to Line2 if you
-        // need fat lines. For Phase 4 a 1-px line is enough.
-        routeMatCache.set(c, new THREE.LineBasicMaterial({ color: c }));
-    }
-    return routeMatCache.get(c);
-}
+const EDGE_WIDTH_SCALE = 1.4;      // world units per ln(1+traffic)
+const EDGE_WIDTH_MIN   = 0.3;
+const EDGE_WIDTH_MAX   = 12;
+const EDGE_LIFT        = 1.0;      // hover above the topo to avoid z-fight
+const EDGE_COLOR_LOW   = 0xffe070; // light traffic
+const EDGE_COLOR_HIGH  = 0xff2233; // heavy traffic
 
 // ======================================================================
 // Debug-value overlays (Phase 5)
@@ -351,20 +696,39 @@ function routeMat(idx) {
 // active debug layer. Layers are mutually exclusive — clicking the active
 // layer's button turns it off; clicking another switches.
 // ======================================================================
+// Each layer's `stops` is a colour ramp interpolated from low (index 0) to
+// high (last index). Two-colour ramps still work — just pass two stops.
 const DEBUG_LAYERS = {
-    elevation:     { f: v => v.elevation,                                 c0: 0x222244, c1: 0xffeecc, label: 'elevation' },
-    defense:       { f: v => v.defense,                                   c0: 0x222222, c1: 0xff4422, label: 'defense' },
-    security:      { f: v => v._security,                                 c0: 0x222244, c1: 0x88ccff, label: 'security' },
-    farmValue:     { f: v => v.farmValue,                                 c0: 0x222222, c1: 0x44dd44, label: 'farm value' },
-    farmerValue:   { f: v => v.farmerValue,                               c0: 0x222222, c1: 0x44ddcc, label: 'farmer value' },
-    merchantValue: { f: v => v.merchantValue,                             c0: 0x222222, c1: 0xddaa22, label: 'merchant value' },
-    steepness:     { f: v => v.steepness,                                 c0: 0x224422, c1: 0xff2222, label: 'steepness' },
+    // Classical hypsometric tints: deep ocean → coast → lowland green → tan → brown → snow.
+    elevation:     { f: v => v.elevation,
+                     stops: [0x081830, 0x2860a0, 0x60b0d0, 0xeeddaa, 0x88bb55, 0xddcc66, 0x886633, 0xeeeeee],
+                     label: 'elevation' },
+    // Yellow → green → blue, low (blue) to high (yellow) per request.
+    defense:       { f: v => v.defense,
+                     stops: [0x2244ff, 0x44ccff, 0x44dd66, 0xddee22, 0xffaa00],
+                     label: 'defense' },
+    security:      { f: v => v._security,         stops: [0x222244, 0x88ccff],         label: 'security' },
+    farmValue:     { f: v => v.farmValue,         stops: [0x222222, 0x66aa44, 0xeeff66], label: 'farm value' },
+    farmerValue:   { f: v => v.farmerValue,       stops: [0x222222, 0x44ddcc],         label: 'farmer value' },
+    merchantValue: { f: v => v.merchantValue,     stops: [0x222222, 0xddaa22],         label: 'merchant value' },
+    steepness:     { f: v => v.steepness,         stops: [0x224422, 0xddee44, 0xff2222], label: 'steepness' },
     trafficCount:  { f: v => v.neighbors.reduce((s,n)=>s+(n.trafficCount||0),0),
-                                                                          c0: 0x111111, c1: 0xffaa00, label: 'traffic' },
-    habitable:     { f: v => v.habitable ? 1 : 0,                         c0: 0x553322, c1: 0x44ff44, label: 'habitable' },
+                                                  stops: [0x111111, 0xffaa00],         label: 'traffic' },
+    habitable:     { f: v => v.habitable ? 1 : 0, stops: [0x553322, 0x44ff44],         label: 'habitable' },
     occupied:      { f: v => v.occupied  ? 1 : (v.occupiedByRoute ? 0.5 : 0),
-                                                                          c0: 0x222222, c1: 0xff4488, label: 'occupied' },
+                                                  stops: [0x222222, 0xff4488],         label: 'occupied' },
 };
+
+// Interpolate a multi-stop colour ramp at t∈[0,1]. Stops are evenly spaced.
+function colorAtStop(stops, t, out) {
+    const n = stops.length;
+    if (n === 1) return out.set(stops[0]);
+    const x = Math.max(0, Math.min(1, t)) * (n - 1);
+    const i = Math.min(Math.floor(x), n - 2);
+    const u = x - i;
+    return out.set(stops[i]).lerp(_stopTmp.set(stops[i + 1]), u);
+}
+const _stopTmp = new THREE.Color();
 let activeDebugLayer = null;
 let debugMesh        = null;
 
@@ -385,14 +749,17 @@ function buildDebugMesh() {
     g.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3));
     g.setIndex(idx.clone());
     const m = new THREE.MeshBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.6,
-        side: THREE.DoubleSide, depthWrite: false,
+        vertexColors: true, transparent: true, opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        depthTest:  false,            // render on top of tiles/buildings
     });
     if (debugMesh) {
         debugMesh.geometry.dispose();
         scene.remove(debugMesh);
     }
     debugMesh = new THREE.Mesh(g, m);
+    debugMesh.renderOrder = 1000;     // draw after everything else
     debugMesh.visible = activeDebugLayer != null;
     scene.add(debugMesh);
     if (activeDebugLayer) refreshDebugColors();
@@ -402,6 +769,10 @@ function refreshDebugColors() {
     if (!debugMesh || !activeDebugLayer) return;
     const layer = DEBUG_LAYERS[activeDebugLayer];
     if (!layer) return;
+
+    // Simple min/max range. (We tried percentile-based clipping but the
+    // dataset has long-tailed distributions where the simple range still
+    // reads better; revisit if a layer's gradient looks crushed.)
     let lo = Infinity, hi = -Infinity;
     for (const v of vertices) {
         const x = layer.f(v);
@@ -410,15 +781,17 @@ function refreshDebugColors() {
             if (x > hi) hi = x;
         }
     }
+    if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
     const span = hi - lo > 1e-9 ? hi - lo : 1;
+    console.log(`[debug ${activeDebugLayer}] lo=${lo.toFixed(3)} hi=${hi.toFixed(3)} span=${span.toFixed(3)}`);
+
     const colors = debugMesh.geometry.getAttribute('color').array;
-    const c0 = new THREE.Color(layer.c0);
-    const c1 = new THREE.Color(layer.c1);
     const tmp = new THREE.Color();
+    const stops = layer.stops || [layer.c0 ?? 0x000000, layer.c1 ?? 0xffffff];
     for (let i = 0; i < vertices.length; i++) {
         const x = layer.f(vertices[i]);
         const t = Number.isFinite(x) ? (x - lo) / span : 0;
-        tmp.copy(c0).lerp(c1, Math.max(0, Math.min(1, t)));
+        colorAtStop(stops, t, tmp);
         colors[i*3]     = tmp.r;
         colors[i*3 + 1] = tmp.g;
         colors[i*3 + 2] = tmp.b;
@@ -432,6 +805,97 @@ function setDebugLayer(name) {
     debugMesh.visible = activeDebugLayer != null;
     if (activeDebugLayer) refreshDebugColors();
     return activeDebugLayer;
+}
+
+// ======================================================================
+// Regional trade route (TODO #2). The 2D simulation hard-codes start/end
+// vertices per city; here we pick them randomly each run, but only from
+// "true edge" vertices — those that appear in only 1 or 2 tiles, i.e.
+// sit on the outer boundary of the relaxed Voronoi mesh — and require
+// the euclidean distance between the two endpoints to exceed the map's
+// Z span (so the route always crosses the region rather than running
+// along one edge). createHardcodedRoute sets tradeDestination1/2, which
+// 15_settlement.js's createMerchant already reads to route every newly
+// spawned merchant to those endpoints.
+function findStrictEdgeVertices() {
+    const tileCount = new Map();
+    for (const t of tiles) {
+        for (const idx of t.vertexIndices) {
+            tileCount.set(idx, (tileCount.get(idx) || 0) + 1);
+        }
+    }
+    const edges = [];
+    for (const v of vertices) {
+        if ((tileCount.get(v.index) || 0) <= 2) edges.push(v);
+    }
+    return edges;
+}
+
+// Quick console-side audit so you can confirm new merchants actually run
+// pathfinding to the regional endpoints. From the devtools console:
+//     auditMerchantRoutes()
+// prints each Merchant settlement and how many of `routes` start at it
+// AND end at tradeDestination1 or tradeDestination2. Anything reading 0
+// is a settlement that didn't run the trade pathfinding.
+window.auditMerchantRoutes = function () {
+    const td1 = tradeDestination1 ? tradeDestination1.index : null;
+    const td2 = tradeDestination2 ? tradeDestination2.index : null;
+    if (td1 == null || td2 == null) {
+        console.warn('tradeDestination1/2 are not set — call setupRegionalRoute()');
+        return;
+    }
+    console.log('regional endpoints:', td1, '↔', td2);
+    let zero = 0;
+    for (const s of settlements) {
+        if (s.profession !== 'Merchant') continue;
+        const myIdx = s.vertex && s.vertex.index;
+        let hits1 = 0, hits2 = 0;
+        for (const r of routes) {
+            if (!r.start || r.start.index !== myIdx) continue;
+            if (r.end && r.end.index === td1) hits1++;
+            if (r.end && r.end.index === td2) hits2++;
+        }
+        console.log(`  merchant @${myIdx}  →td1:${hits1}  →td2:${hits2}  (tw=${s.trafficWeight})`);
+        if (hits1 === 0 && hits2 === 0) zero++;
+    }
+    console.log(zero === 0 ? 'all merchants routed to at least one endpoint ✓' :
+                              `${zero} merchant(s) have no trade routes ✗`);
+};
+
+function setupRegionalRoute() {
+    if (typeof createHardcodedRoute !== 'function') return false;
+    const edges = findStrictEdgeVertices();
+    if (edges.length < 2) {
+        console.warn('regional route: <2 strict-edge vertices, skipping');
+        return false;
+    }
+    let zMin = Infinity, zMax = -Infinity;
+    for (const v of vertices) {
+        if (v.hexY < zMin) zMin = v.hexY;
+        if (v.hexY > zMax) zMax = v.hexY;
+    }
+    const zSpan = zMax - zMin;
+    for (let attempt = 0; attempt < 200; attempt++) {
+        const a = edges[Math.floor(Math.random() * edges.length)];
+        const b = edges[Math.floor(Math.random() * edges.length)];
+        if (a === b) continue;
+        const dx = a.hexX - b.hexX, dy = a.hexY - b.hexY;
+        if (Math.hypot(dx, dy) > zSpan) {
+            try {
+                createHardcodedRoute(a.index, b.index);
+                console.log('regional trade route:', a.index, '↔', b.index,
+                            '(', edges.length, 'edge vertices,',
+                            'Δ=' + Math.hypot(dx, dy).toFixed(0),
+                            'zSpan=' + zSpan.toFixed(0) + ')');
+                return true;
+            } catch (e) {
+                console.warn('createHardcodedRoute failed:', e);
+                return false;
+            }
+        }
+    }
+    console.warn('regional route: no valid endpoint pair found in 200 attempts');
+    return false;
 }
 
 // ======================================================================
@@ -458,6 +922,60 @@ function simStep() {
 }
 function simStepN(n) {
     for (let i = 0; i < n; i++) simStep();
+    postSimStep();
+}
+
+// Post-step bookkeeping that the reference 2D sim doesn't do but the user
+// asked for in the project TODO:
+//   1. Farm value already includes a smooth high-ground penalty inside
+//      Vertex.calculateFarmValue (12_vertex.js), so no extra work needed
+//      here — leaving the hook in case more derived values are added.
+//   2. Farmer settlements whose vertex.merchantValue exceeds a threshold
+//      get upgraded to Merchants (the "trade routes turned a farm village
+//      into a market town" arc) AND immediately generate the same trade
+//      routes the original createMerchant would — to tradeDestination1/2
+//      (the regional endpoints) and the first castle.
+const FARMER_TO_MERCHANT_THRESHOLD = 200;
+function spawnMerchantTradeRoutes(merchant) {
+    if (!merchant.vertex || typeof pathFinding !== 'function') return;
+    const tw = merchant.trafficWeight;
+    const ends = [];
+    if (tradeDestination1) ends.push({ to: tradeDestination1, w: tw });
+    if (tradeDestination2) ends.push({ to: tradeDestination2, w: tw });
+    if (castleVertices && castleVertices.length > 0) {
+        ends.push({ to: castleVertices[0], w: tw * 2 });
+    }
+    for (const { to, w } of ends) {
+        if (!to || to === merchant.vertex) continue;
+        try {
+            const path = pathFinding(merchant.vertex, to, w);
+            if (path) routes.push(new Route(merchant.vertex, to, w, path));
+        } catch (e) {
+            console.warn('merchant trade-route pathfinding failed:', e);
+        }
+    }
+}
+
+function postSimStep() {
+    for (const s of settlements) {
+        if (s.profession === 'Farmer'
+            && s.vertex
+            && s.vertex.merchantValue > FARMER_TO_MERCHANT_THRESHOLD) {
+            // Flip profession + traffic weight (Merchant = 2 in the
+            // Settlement constructor; we have to mirror that here since
+            // we're not constructing a new Settlement object).
+            s.profession    = 'Merchant';
+            s.trafficWeight = 2;
+            // Drop the farmer's gardens — they become merchant stalls now.
+            farmerVertexIndices.delete(s.vertex.index);
+            const vincinity = s.vertex.vincinityNeighbors;
+            if (Array.isArray(vincinity)) {
+                for (const n of vincinity) n.garden = null;
+            }
+            // Generate the trade routes the merchant should have.
+            spawnMerchantTradeRoutes(s);
+        }
+    }
 }
 
 // ======================================================================
@@ -472,15 +990,27 @@ let hoverMarker = null;
 let mouseMode   = null;
 let pendingRoadStart = null;
 
-function pickVertex(clientX, clientY) {
-    if (!topoMesh) return null;
+// Cast a ray from screen coords. Hits whichever of (tilesGroup, topoMesh,
+// settlementsGroup) is currently visible — the topo is hidden by default
+// but the tile assets cover its surface, so we still get a usable hit.
+function rayHitWorld(clientX, clientY) {
     const rect = renderer.domElement.getBoundingClientRect();
     ndc.x =  ((clientX - rect.left) / rect.width)  * 2 - 1;
     ndc.y = -((clientY - rect.top)  / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObject(topoMesh, false);
-    if (!hits.length) return null;
-    const p = hits[0].point;
+    const targets = [];
+    if (tilesGroup       && tilesGroup.visible)       targets.push(tilesGroup);
+    if (topoMesh         && topoMesh.visible)         targets.push(topoMesh);
+    if (settlementsGroup && settlementsGroup.visible) targets.push(settlementsGroup);
+    if (!targets.length) return null;
+    const hits = raycaster.intersectObjects(targets, true);
+    return hits.length ? hits[0] : null;
+}
+
+function pickVertex(clientX, clientY) {
+    const hit = rayHitWorld(clientX, clientY);
+    if (!hit) return null;
+    const p = hit.point;
     let best = null, bestD2 = Infinity;
     for (const v of vertices) {
         const dx = worldXOf(v) - p.x;
@@ -490,6 +1020,20 @@ function pickVertex(clientX, clientY) {
         if (d2 < bestD2) { bestD2 = d2; best = v; }
     }
     return best;
+}
+
+// Click a tile mesh → walk up the parent chain until we find the host
+// group whose userData.tile we set in placeTileAsset.
+function pickTile(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndc.x =  ((clientX - rect.left) / rect.width)  * 2 - 1;
+    ndc.y = -((clientY - rect.top)  / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObject(tilesGroup, true);
+    if (!hits.length) return null;
+    let o = hits[0].object;
+    while (o && !(o.userData && o.userData.tile)) o = o.parent;
+    return o ? o.userData.tile : null;
 }
 
 function ensureHoverMarker() {
@@ -588,27 +1132,186 @@ function applyMouseMode(v) {
     return changed;
 }
 
+// One mesh that holds every edge with traffic. Rebuilt fresh on each sync.
+// City lights at night — same mesh layout as the topo (one vertex per
+// JSON vertex, neighbours share corners), so colours interpolate smoothly
+// across each cell. That's the "softer / more like street lighting" look
+// the user wanted, vs. the previous per-tile flat quads.
+//
+// Brightness per vertex = sqrt(merchantValue / globalMax) so modest
+// commerce still registers; an even-luminance curve.
+//
+// Lifted ~0.5 world units — above the asset ground (which sits at +0.3
+// after TILE_LIFT) but well under building roofs. Depth-tested so
+// buildings occlude the lights correctly: you see the glow on the
+// streets between them, not bleeding through walls.
+const CITY_LIGHTS_LIFT = 0.5;
+function buildCityLights() {
+    while (cityLightsGroup.children.length) {
+        const c = cityLightsGroup.children.pop();
+        c.geometry?.dispose();
+        c.material?.dispose();
+        cityLightsGroup.remove(c);
+    }
+    let maxMV = 0;
+    for (const v of vertices) if (v.merchantValue > maxMV) maxMV = v.merchantValue;
+    if (maxMV <= 0) return;
+
+    const N = vertices.length;
+    const positions = new Float32Array(N * 3);
+    const colors    = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+        const v = vertices[i];
+        positions[i*3]     = worldXOf(v);
+        positions[i*3 + 1] = worldYOf(v) + CITY_LIGHTS_LIFT;
+        positions[i*3 + 2] = worldZOf(v);
+        // Linear normalised merchant value (raw activity reads through —
+        // busy markets blaze, quiet ones stay dim). HDR brightness is
+        // cranked through material.color so the linear ramp is fine.
+        const intensity = v.merchantValue > 0 ? v.merchantValue / maxMV : 0;
+        // Warm sodium-vapour street-light tint (deep amber).
+        colors[i*3]     = 1.00 * intensity;
+        colors[i*3 + 1] = 0.62 * intensity;
+        colors[i*3 + 2] = 0.18 * intensity;
+    }
+
+    // Same triangulation as the topo: 2 tris per tile, with the same
+    // CCW-from-above winding sniff so face normals don't fight.
+    const indices = new Uint32Array(tiles.length * 6);
+    let o = 0;
+    for (const t of tiles) {
+        let i0 = t.vertexIndices[0],
+            i1 = t.vertexIndices[1],
+            i2 = t.vertexIndices[2],
+            i3 = t.vertexIndices[3];
+        const p0x = positions[i0*3],     p0z = positions[i0*3 + 2];
+        const e1x = positions[i1*3]     - p0x, e1z = positions[i1*3 + 2] - p0z;
+        const e2x = positions[i3*3]     - p0x, e2z = positions[i3*3 + 2] - p0z;
+        if (e1z * e2x - e1x * e2z < 0) { const tmp = i1; i1 = i3; i3 = tmp; }
+        indices[o++] = i0; indices[o++] = i1; indices[o++] = i2;
+        indices[o++] = i0; indices[o++] = i2; indices[o++] = i3;
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3));
+    g.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    // material.color × vertex.color → final fragment colour.
+    // Setting material.color above 1.0 (HDR) brightens beyond what
+    // opacity can do, then ACES tone-maps it back into range.
+    const b = lightCycle.cityLightsBrightness;
+    const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        color:        new THREE.Color(b, b, b),
+        blending:     THREE.AdditiveBlending,
+        transparent:  true,
+        opacity:      0,                     // driven by phase
+        depthWrite:   false,
+        // depthTest stays on — buildings should occlude street lights.
+        side:         THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.renderOrder = 1500;
+    cityLightsGroup.add(mesh);
+}
+
 function syncRoutes() {
     while (routesGroup.children.length) {
         const c = routesGroup.children[routesGroup.children.length - 1];
         routesGroup.remove(c);
         c.geometry?.dispose();
+        c.material?.dispose();
     }
-    routes.forEach((route, i) => {
-        const path = route.path;  // array of vertex indices
-        if (!path || path.length < 2) return;
-        const positions = new Float32Array(path.length * 3);
-        for (let j = 0; j < path.length; j++) {
-            const v = vertexByIndex.get(path[j]);
-            if (!v) continue;
-            positions[j*3]     = worldXOf(v);
-            positions[j*3 + 1] = worldYOf(v) + 2;  // hover slightly above surface
-            positions[j*3 + 2] = worldZOf(v);
+
+    // Find max traffic for colour normalisation.
+    let maxTraffic = 0;
+    for (const v of vertices) {
+        for (const n of v.neighbors) {
+            if (n.trafficCount > maxTraffic) maxTraffic = n.trafficCount;
         }
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        routesGroup.add(new THREE.Line(g, routeMat(i)));
+    }
+    if (maxTraffic <= 0) return;
+
+    const positions = [];
+    const colors    = [];
+    const indices   = [];
+    let vCount = 0;
+
+    const dir   = new THREE.Vector3();
+    const perp  = new THREE.Vector3();
+    const upY   = new THREE.Vector3(0, 1, 0);
+    const cLow  = new THREE.Color(EDGE_COLOR_LOW);
+    const cHigh = new THREE.Color(EDGE_COLOR_HIGH);
+    const tmpC  = new THREE.Color();
+
+    for (const v of vertices) {
+        const ax = worldXOf(v);
+        const ay = worldYOf(v);
+        const az = worldZOf(v);
+        for (const n of v.neighbors) {
+            if (!(n.trafficCount > 0)) continue;
+            // Each edge is symmetric; emit only from the lower-index end.
+            if (v.index >= n.vertexIndex) continue;
+            const u = vertexByIndex.get(n.vertexIndex);
+            if (!u) continue;
+
+            const bx = worldXOf(u);
+            const by = worldYOf(u);
+            const bz = worldZOf(u);
+
+            // Perpendicular direction in the topo plane (around world Y).
+            dir.set(bx - ax, 0, bz - az);
+            const len = Math.hypot(dir.x, dir.z);
+            if (len < 1e-6) continue;
+            dir.x /= len; dir.z /= len;
+            perp.crossVectors(upY, dir);   // unit length already
+
+            // Logarithmic line weight: a 100×-busier edge is only ~5×
+            // wider than a single-traversal edge, not 100× wider.
+            const w = Math.min(
+                EDGE_WIDTH_MAX,
+                Math.max(EDGE_WIDTH_MIN, Math.log(1 + n.trafficCount) * EDGE_WIDTH_SCALE),
+            );
+            const half = w * 0.5;
+
+            // 4 quad corners: A_left, A_right, B_right, B_left
+            positions.push(
+                ax + perp.x * half, ay + EDGE_LIFT, az + perp.z * half,
+                ax - perp.x * half, ay + EDGE_LIFT, az - perp.z * half,
+                bx - perp.x * half, by + EDGE_LIFT, bz - perp.z * half,
+                bx + perp.x * half, by + EDGE_LIFT, bz + perp.z * half,
+            );
+
+            const t = Math.min(1, n.trafficCount / maxTraffic);
+            tmpC.copy(cLow).lerp(cHigh, t);
+            for (let k = 0; k < 4; k++) {
+                colors.push(tmpC.r, tmpC.g, tmpC.b);
+            }
+
+            const i0 = vCount;
+            indices.push(i0, i0 + 1, i0 + 2,  i0, i0 + 2, i0 + 3);
+            vCount += 4;
+        }
+    }
+
+    if (vCount === 0) return;
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3));
+    g.setIndex(indices);
+
+    const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        side:         THREE.DoubleSide,
+        transparent:  true,
+        opacity:      0.92,
+        depthWrite:   false,
     });
+
+    const mesh = new THREE.Mesh(g, mat);
+    routesGroup.add(mesh);
 }
 
 // ======================================================================
@@ -646,20 +1349,20 @@ const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(),
 const tileObjects = new Map();   // tile.id -> THREE.Object3D
 let lastSigByTileId = new Map(); // tile.id -> last signature placed
 
-// Bilinear deformation: map every vertex of the atlas asset (in its local
-// 30×30×30 box, origin at bottom center) into the cell's skewed prism. The
-// asset's bottom-corner verts land exactly on the quad's 4 vertices at their
-// real elevations; the top is flat at max(corner.y) + ASSET_HEIGHT*elevScale.
-// Walls and interior verts are bilinear/lerp-blended between bottom and top.
+// Bilinear deformation (clean skew): map every vertex of the atlas asset
+// (local 30×30×30 box, origin at bottom centre) into the cell's skewed
+// prism. The asset's bottom-corner verts land exactly on the quad's 4
+// vertices at their real elevations; the asset's top is a translated
+// copy of the bottom, offset by `ly * elevScale` in world Y. So the
+// asset preserves its local height profile and simply rides the slope —
+// no vertical stretching, no flat top added on max(corner.y).
 //
 //   local (lx, ly, lz) ∈ [-15, +15] × [0, 30] × [-15, +15]
 //   s = (lx + 15) / 30          → [0,1] across the cell footprint X
 //   t = (lz + 15) / 30          → [0,1] across the cell footprint Z
-//   h = ly / 30                 → 0 at bottom, 1 at top
-//   bottomP(s,t) = bilinear blend of the 4 corner positions
-//   topY        = max(corner.y) + ASSET_HEIGHT * elevScale
-//   final.xz = bottomP.xz                (vertical columns above the cell)
-//   final.y  = lerp(bottomP.y, topY, h)
+//   bottomP(s,t) = bilinear blend of the 4 corner positions in world space
+//   final.xz = bottomP.xz
+//   final.y  = bottomP.y + ly * elevScale
 function placeTileAsset(tile, sig) {
     const node = atlasNodes && atlasNodes.get(sig);
     if (!node) {
@@ -674,35 +1377,40 @@ function placeTileAsset(tile, sig) {
         return;
     }
 
-    // Pull the four corners in world space (CCW-from-above: required so the
-    // bilinear (s,t) parameterisation matches the asset's local axes).
+    // Pull the four corners in world space. The JSON's vertexIndices order
+    // is a LABEL convention — [TL, TR, BR, BL] — not a geometric winding,
+    // and we use it directly so the asset's local axes match the cell's
+    // labels (matches 17_presentation.js in the 2D sim, which also reads
+    // tileVertices[0..3] as tl/tr/br/bl with no reorder).
+    //
+    // Do NOT apply ensureCCWFromAbove-style swapping here. The topo builder
+    // does that swap because its hard-coded triangulation needs face winding
+    // flipped to produce upward normals; for the bilinear deformation the
+    // asset's mesh keeps its own consistent winding, and any winding flip on
+    // the corners would mirror the asset across the TL-BR diagonal — what
+    // shows up visually as a 180° rotation on symmetric assets and an
+    // outright mirror on asymmetric ones (e.g. roads, oriented buildings).
     const v0 = vertexByIndex.get(tile.vertexIndices[0]);
     const v1 = vertexByIndex.get(tile.vertexIndices[1]);
     const v2 = vertexByIndex.get(tile.vertexIndices[2]);
     const v3 = vertexByIndex.get(tile.vertexIndices[3]);
     if (!v0 || !v1 || !v2 || !v3) return;
-    let c0 = worldVec3(v0).clone();
-    let c1 = worldVec3(v1).clone();
-    let c2 = worldVec3(v2).clone();
-    let c3 = worldVec3(v3).clone();
-    const e1x = c1.x - c0.x, e1z = c1.z - c0.z;
-    const e2x = c3.x - c0.x, e2z = c3.z - c0.z;
-    if (e1z * e2x - e1x * e2z < 0) {
-        const tmp = c1; c1 = c3; c3 = tmp;
-    }
+    const c0 = worldVec3(v0).clone();
+    const c1 = worldVec3(v1).clone();
+    const c2 = worldVec3(v2).clone();
+    const c3 = worldVec3(v3).clone();
     // Lift each corner a hair above the topo so the asset's ground tris
     // don't z-fight with the topo mesh. ~0.3 world units on a topo whose
     // tile cells are ~16 hex-pixels wide is invisible from any angle.
     const TILE_LIFT = 0.3;
     c0.y += TILE_LIFT; c1.y += TILE_LIFT; c2.y += TILE_LIFT; c3.y += TILE_LIFT;
-    const maxY = Math.max(c0.y, c1.y, c2.y, c3.y);
-    const topY = maxY + ASSET_HEIGHT * elevScale;
 
     // Reuse the host group if this tile already had one; dispose the old
     // deformed geometries to keep memory in check across re-syncs.
     let host = tileObjects.get(tile.id);
     if (!host) {
         host = new THREE.Group();
+        host.userData.tile = tile;   // back-pointer for inspect-mode picking
         tilesGroup.add(host);
         tileObjects.set(tile.id, host);
     } else {
@@ -734,7 +1442,6 @@ function placeTileAsset(tile, sig) {
             const lz = srcPos.getZ(i);
             const s = (lx + ASSET_HALF) / (ASSET_HALF * 2);
             const t = (lz + ASSET_HALF) / (ASSET_HALF * 2);
-            const h = ly / ASSET_HEIGHT;
             const w00 = (1 - s) * (1 - t);
             const w10 =      s  * (1 - t);
             const w11 =      s  *      t;
@@ -743,13 +1450,111 @@ function placeTileAsset(tile, sig) {
             const by = w00*c0.y + w10*c1.y + w11*c2.y + w01*c3.y;
             const bz = w00*c0.z + w10*c1.z + w11*c2.z + w01*c3.z;
             out[i*3]     = bx;
-            out[i*3 + 1] = by * (1 - h) + topY * h;
+            out[i*3 + 1] = by + ly * elevScale;
             out[i*3 + 2] = bz;
         }
+        const matName  = ((child.material && child.material.name) || '').toLowerCase();
+        const isGround = matName === 'w';
+        // One-time log of every distinct material name we see, so the
+        // user can sanity-check that the ground really is named 'w'.
+        window.__seenAtlasMats = window.__seenAtlasMats || new Set();
+        if (!window.__seenAtlasMats.has(matName)) {
+            window.__seenAtlasMats.add(matName);
+            console.log('atlas material:', JSON.stringify(matName), isGround ? '(ground — winding fixed + fully smoothed)' : '(only bottom smoothed)');
+        }
+
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
         if (srcIdx) g.setIndex(srcIdx.clone());
+
+        // Flip winding on every triangle whose geometric face points DOWN.
+        // For ground meshes, all triangles. For non-ground meshes, only the
+        // ground-band triangles (where every vertex has ly < 0.5) — wall
+        // and roof tris are allowed to face down genuinely (a roof's
+        // underside does, and we want the back-face shading to apply
+        // correctly there).
+        // Why this matters: a down-facing geometric triangle, viewed from
+        // above through a DoubleSide material, is rendered as a back-face;
+        // the shader flips its vertex normal for lighting; our smoothed
+        // up-pointing normal becomes down → unlit → black patch.
+        let flipped = 0, scanned = 0;
+        if (srcIdx) {
+            const idxArr = g.getIndex().array;
+            const GROUND_LY_FLIP = 0.5;
+            for (let ti = 0; ti < idxArr.length; ti += 3) {
+                const a = idxArr[ti];
+                const b = idxArr[ti + 1];
+                const c = idxArr[ti + 2];
+                if (!isGround) {
+                    const lyA = srcPos.getY(a);
+                    const lyB = srcPos.getY(b);
+                    const lyC = srcPos.getY(c);
+                    if (lyA > GROUND_LY_FLIP || lyB > GROUND_LY_FLIP || lyC > GROUND_LY_FLIP) continue;
+                }
+                const ax = out[a*3],     az = out[a*3 + 2];
+                const bx = out[b*3],     bz = out[b*3 + 2];
+                const cx = out[c*3],     cz = out[c*3 + 2];
+                // Y of (b-a)×(c-a). Negative = face points down.
+                const ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+                scanned++;
+                if (ny < 0) {
+                    idxArr[ti + 1] = c;
+                    idxArr[ti + 2] = b;
+                    flipped++;
+                }
+            }
+            g.getIndex().needsUpdate = true;
+        }
+        if (!window.__windingStats) {
+            window.__windingStats = { total: 0, flipped: 0, scanned: 0 };
+        }
+        window.__windingStats.total++;
+        window.__windingStats.flipped += flipped;
+        window.__windingStats.scanned += scanned;
+
         g.computeVertexNormals();
+
+        // Terrain-smoothing filter. The ground mesh's per-cell normals
+        // (after the winding fix above) already point up, but each tile
+        // computes its own — adjacent cells disagree at shared edges. We
+        // override every ground-mesh vertex normal with a bilinear blend
+        // of the cell's 4 corner topo normals; corners are shared with
+        // neighbours, so adjacent tiles agree along edges → no seam.
+        if (topoSmoothNormals) {
+
+            const i0 = tile.vertexIndices[0];
+            const i1 = tile.vertexIndices[1];
+            const i2 = tile.vertexIndices[2];
+            const i3 = tile.vertexIndices[3];
+            const n0x = topoSmoothNormals[i0*3], n0y = topoSmoothNormals[i0*3+1], n0z = topoSmoothNormals[i0*3+2];
+            const n1x = topoSmoothNormals[i1*3], n1y = topoSmoothNormals[i1*3+1], n1z = topoSmoothNormals[i1*3+2];
+            const n2x = topoSmoothNormals[i2*3], n2y = topoSmoothNormals[i2*3+1], n2z = topoSmoothNormals[i2*3+2];
+            const n3x = topoSmoothNormals[i3*3], n3y = topoSmoothNormals[i3*3+1], n3z = topoSmoothNormals[i3*3+2];
+            const normAttr = g.getAttribute('normal');
+            // Ground mesh: smooth ALL vertices regardless of local Y.
+            // Non-ground mesh: smooth only the bottom band.
+            const groundLy = isGround ? Infinity : 0.5;
+            for (let i = 0; i < N; i++) {
+                const ly = srcPos.getY(i);
+                if (ly > groundLy) continue;
+                const lx = srcPos.getX(i);
+                const lz = srcPos.getZ(i);
+                const s = (lx + ASSET_HALF) / (ASSET_HALF * 2);
+                const t = (lz + ASSET_HALF) / (ASSET_HALF * 2);
+                const w00 = (1 - s) * (1 - t);
+                const w10 =      s  * (1 - t);
+                const w11 =      s  *      t;
+                const w01 = (1 - s) *      t;
+                let nx = w00*n0x + w10*n1x + w11*n2x + w01*n3x;
+                let ny = w00*n0y + w10*n1y + w11*n2y + w01*n3y;
+                let nz = w00*n0z + w10*n1z + w11*n2z + w01*n3z;
+                const len = Math.hypot(nx, ny, nz);
+                if (len > 1e-9) { nx /= len; ny /= len; nz /= len; }
+                normAttr.setXYZ(i, nx, ny, nz);
+            }
+            normAttr.needsUpdate = true;
+        }
+
         const tileMesh = new THREE.Mesh(g, child.material);
         tileMesh.castShadow    = true;
         tileMesh.receiveShadow = true;
@@ -774,7 +1579,7 @@ function syncTiles() {
 // Main init
 // ======================================================================
 async function init() {
-    hud.innerHTML = 'fetching topo_json/large_rome.json ...';
+    setStatus('fetching topo_json/large_rome.json ...');
     let json;
     try {
         json = await fetch('topo_json/large_rome.json').then(r => {
@@ -782,8 +1587,8 @@ async function init() {
             return r.json();
         });
     } catch (e) {
-        hud.innerHTML = '<b class="bad">fetch failed:</b> ' + e.message
-            + '<br>serve via http (e.g. <code>python -m http.server</code>)';
+        setStatus('<b class="bad">fetch failed:</b> ' + e.message
+            + '. serve via http (e.g. <code>python -m http.server</code>)');
         throw e;
     }
 
@@ -792,6 +1597,20 @@ async function init() {
     for (const v of json.vertices) { cx += v.hexCoords.x; cz += v.hexCoords.y; }
     cx /= json.vertices.length; cz /= json.vertices.length;
 
+    // Aim the camera at the actual hex center (which the JSON gives us
+    // directly — the centroid of relaxed vertices is close but not
+    // identical), and pull it in for a tighter framing of the city.
+    const hexC = json.mapping.hexCenter;
+    const tx = hexC.x - cx;          // hex centre in our centered world space
+    const tz = hexC.y - cz;
+    controls.target.set(tx, 30, tz);
+    // FOV=12, distance ≈ 1800. View radius ≈ 189 — frames the centre
+    // of the hex tight rather than the full map. Mouse-wheel out to
+    // see the borders.
+    camera.position.set(tx + 890, 1050, tz + 1160);
+    camera.lookAt(controls.target);
+    controls.update();
+
     // Initialise the simulation.
     initSim(json);
 
@@ -799,26 +1618,34 @@ async function init() {
     topoMesh  = buildTopo();
     topoMesh.visible = false;   // tiles cover the topo; topo is debug-only
     scene.add(topoMesh);
+    cacheTopoNormals();
     waterMesh = buildWater();  scene.add(waterMesh);
     buildDebugMesh();
 
-    hud.innerHTML = 'loading assets/atlas_3d.glb ...';
+    setStatus('loading assets/atlas_3d.glb ...');
     try {
         await loadAtlas();
     } catch (e) {
-        hud.innerHTML = '<b class="bad">atlas load failed:</b> ' + e.message
-            + '<br>continuing without asset rendering (Phase 2 only).';
+        setStatus('<b class="bad">atlas load failed:</b> ' + e.message
+            + '. continuing without asset rendering.');
         atlasNodes = null;
     }
 
+    // Set up the regional trade route (sets tradeDestination1/2 so
+    // newly-spawned merchants automatically route to those endpoints).
+    setupRegionalRoute();
+
     // Initial tile sync — every cell starts as 'wwww' (wilderness), so all
     // 5096 tiles get an asset placed unless the user hasn't modelled wwww.
+    // Doing this AFTER setupRegionalRoute means the regional route's
+    // occupiedByRoute marks already feed into the per-tile signature.
     if (atlasNodes) {
         const t0 = performance.now();
         const r  = syncTiles();
         const t1 = performance.now();
         console.log(`initial syncTiles: ${(t1 - t0).toFixed(0)} ms, placed ${r?.placed} missing ${r?.missing}`);
     }
+    syncRoutes();
 
     initialized = true;
     setupHud();
@@ -828,98 +1655,13 @@ async function init() {
 // HUD
 // ======================================================================
 function setupHud() {
-    hud.innerHTML = `
-      <h3>City sim · Phase 1+2+3</h3>
-      <div class="stat" id="counts"></div>
-      <div class="row">
-        <button id="bSpawn1">spawn 1</button>
-        <button id="bSpawn10">spawn 10</button>
-        <button id="bSpawn50">spawn 50</button>
-        <button id="bRoute">+ random route</button>
-        <button id="bClear">clear</button>
-      </div>
-      <div class="row">
-        <button id="bResync">resync tiles</button>
-        <button id="bAuto">auto ▶</button>
-        <label style="display:inline-flex;width:140px;gap:4px">
-          speed <span id="lAutoMs"></span>ms
-          <input id="iAutoMs" type="range" min="50" max="2000" step="50" style="width:70px">
-        </label>
-      </div>
-      <div class="row">
-        <button id="bSave">💾 save</button>
-        <button id="bLoad">📂 load</button>
-        <input id="iLoadFile" type="file" accept=".json" style="display:none">
-      </div>
-      <div class="row" id="modeRow">
-        click-to-place:
-        <button data-mode="castle">🏯 castle</button>
-        <button data-mode="farmer">👨‍🌾 farmer</button>
-        <button data-mode="merchant">🏪 merchant</button>
-        <button data-mode="road">🛤️ road</button>
-        <button data-mode="delete">🗑️ delete</button>
-        <button data-mode="">none</button>
-      </div>
-      <div class="row">
-        <label>elev × <span id="lE"></span><input id="iE" type="range" min="0.1" max="5" step="0.05"></label>
-        <label>water <span id="lW"></span>m<input id="iW" type="range" min="0" max="100" step="0.5"></label>
-      </div>
-      <div class="row">
-        <button id="bToggleTiles">toggle tiles</button>
-        <button id="bToggleSettle">toggle settlements</button>
-        <button id="bToggleRoutes">toggle routes</button>
-        <button id="bToggleTopo">toggle topo</button>
-        <button id="bToggleWater">toggle water</button>
-        <button id="bAdvanced" title="shadows + soft ambient + SSAO (heavy)">✨ advanced</button>
-      </div>
-      <div class="row" id="debugLayerRow"></div>
-
-      <details style="margin-top:8px">
-        <summary style="cursor:pointer;color:#fff">⚙ parameters</summary>
-
-        <div class="row" style="margin-top:6px">
-          <strong>spawn probability</strong> (% — auto-normalised)
-          <label>Lord <span id="lpL"></span><input id="ipL" type="range" min="0" max="100" step="1"></label>
-          <label>Farmer <span id="lpF"></span><input id="ipF" type="range" min="0" max="100" step="1"></label>
-          <label>Merchant <span id="lpM"></span><input id="ipM" type="range" min="0" max="100" step="1"></label>
-        </div>
-
-        <div class="row">
-          <strong>pathfinding cost</strong>
-          <label>downhill × <span id="lDown"></span><input id="iDown" type="range" min="0"   max="2"  step="0.05"></label>
-          <label>flat cost <span id="lFlat"></span><input id="iFlat" type="range" min="0.5" max="10" step="0.1"></label>
-          <label>traffic w. <span id="lTraf"></span><input id="iTraf" type="range" min="1"   max="40" step="1"></label>
-        </div>
-
-        <div class="row">
-          <strong>movement cost</strong> (rebuilds edges)
-          <label>mode change <span id="lMode"></span><input id="iMode" type="range" min="0"     max="200" step="5"></label>
-          <label>water transport <span id="lWtr"></span><input id="iWtr" type="range" min="0.001" max="1"  step="0.005"></label>
-        </div>
-
-        <div class="row">
-          <strong>influence range</strong> (move-cost budget)
-          <label>close <span id="lShort"></span><input id="iShort" type="range" min="20"  max="400"  step="10"></label>
-          <label>far <span id="lMid"></span><input id="iMid" type="range" min="100" max="1000" step="20"></label>
-        </div>
-
-        <div class="row">
-          <strong>lighting</strong> (live; advanced toggle resets these)
-          <label title="renderer.toneMappingExposure — master final-image scale.">exposure <span id="lExp"></span><input id="iExp" type="range" min="0" max="3"    step="0.02"></label>
-          <label title="scene.environmentIntensity — IBL contribution from the PMREM environment. RoomEnvironment is bright; small values here go a long way.">env intensity <span id="lEnv"></span><input id="iEnv" type="range" min="0" max="0.05" step="0.001"></label>
-          <label title="DirectionalLight intensity. The sole shadow caster.">sun <span id="lSun"></span><input id="iSun" type="range" min="0" max="15"   step="0.1"></label>
-          <label title="AmbientLight — flat unshadowed light from all directions.">ambient <span id="lAmb"></span><input id="iAmb" type="range" min="0" max="3"    step="0.02"></label>
-          <label title="Bluish counter-DirectionalLight that fills shadow-side faces.">fill <span id="lFil"></span><input id="iFil" type="range" min="0" max="3"    step="0.02"></label>
-          <label title="Multiplier on each atlas material's albedo, applied as material.emissive — self-light independent of scene lights.">emissive <span id="lEmi"></span><input id="iEmi" type="range" min="0" max="2"    step="0.02"></label>
-          <label title="sun.shadow.radius (only effective with PCFSoftShadowMap).">shadow blur <span id="lSr"></span><input id="iSr" type="range" min="0" max="10"   step="0.1"></label>
-        </div>
-      </details>
-    `;
-
-    const $ = id => document.getElementById(id);
+    const $ = (id) => document.getElementById(id);
     const counts = $('counts');
-    const lE = $('lE'), iE = $('iE'); iE.value = elevScale;       lE.textContent = elevScale.toFixed(2);
-    const lW = $('lW'), iW = $('iW'); iW.value = waterLevel;      lW.textContent = waterLevel.toFixed(1);
+
+    // Scene sliders living in the settings panel — initial values from the
+    // module's state so the UI matches reality on first paint.
+    const lE = $('lE'), iE = $('iE'); iE.value = elevScale;  lE.textContent = elevScale.toFixed(2);
+    const lW = $('lW'), iW = $('iW'); iW.value = waterLevel; lW.textContent = waterLevel.toFixed(1);
 
     function refresh() {
         counts.textContent = 'verts ' + vertices.length
@@ -931,7 +1673,6 @@ function setupHud() {
             + (pendingRoadStart ? '  · road from ' + pendingRoadStart.index : '');
     }
     refresh();
-    // Allow the click handler (top-level) to refresh the count strip.
     window.__hudRefresh = refresh;
 
     function spawn(n) {
@@ -942,7 +1683,11 @@ function setupHud() {
         syncRoutes();
         const r = syncTiles();
         refreshDebugColors();
+        buildCityLights();
         refresh();
+        // Tile assets may have changed (different signatures, new geometry);
+        // tell the cached shadow map to redraw next frame.
+        if (advancedMode && lightParams.rotationSpeed === 0) renderer.shadowMap.needsUpdate = true;
         console.log(`spawn ${n}: sim ${(t1-t0).toFixed(0)}ms, tiles +${r?.placed||0} placed, ${r?.missing||0} missing`);
     }
 
@@ -986,11 +1731,11 @@ function setupHud() {
     $('bAuto').onclick = (e) => {
         if (autoTimer) {
             clearInterval(autoTimer); autoTimer = null;
-            e.target.textContent = 'auto ▶';
-            e.target.classList.remove('armed');
+            e.currentTarget.textContent = '▶️';
+            e.currentTarget.classList.remove('armed');
         } else {
-            e.target.textContent = 'auto ⏸';
-            e.target.classList.add('armed');
+            e.currentTarget.textContent = '⏸';
+            e.currentTarget.classList.add('armed');
             startAuto();
         }
     };
@@ -1116,17 +1861,21 @@ function setupHud() {
     const lEnv = $('lEnv'), iEnv = $('iEnv');
     const lSun = $('lSun'), iSun = $('iSun');
     const lAmb = $('lAmb'), iAmb = $('iAmb');
-    const lFil = $('lFil'), iFil = $('iFil');
-    const lEmi = $('lEmi'), iEmi = $('iEmi');
     const lSr  = $('lSr'),  iSr  = $('iSr');
+    const lShI = $('lShI'), iShI = $('iShI');
+    const lAz  = $('lAz'),  iAz  = $('iAz');
+    const lAl  = $('lAl'),  iAl  = $('iAl');
+    const lRot = $('lRot'), iRot = $('iRot');
     function syncLightingHud() {
-        iExp.value = lightParams.exposure;     lExp.textContent = lightParams.exposure.toFixed(2);
-        iEnv.value = lightParams.envIntensity; lEnv.textContent = lightParams.envIntensity.toFixed(2);
-        iSun.value = lightParams.sun;          lSun.textContent = lightParams.sun.toFixed(2);
-        iAmb.value = lightParams.ambient;      lAmb.textContent = lightParams.ambient.toFixed(2);
-        iFil.value = lightParams.fill;         lFil.textContent = lightParams.fill.toFixed(2);
-        iEmi.value = lightParams.emissive;     lEmi.textContent = lightParams.emissive.toFixed(2);
-        iSr.value  = lightParams.shadowRadius; lSr.textContent  = lightParams.shadowRadius.toFixed(1);
+        iExp.value = lightParams.exposure;        lExp.textContent = lightParams.exposure.toFixed(2);
+        iEnv.value = lightParams.envIntensity;    lEnv.textContent = lightParams.envIntensity.toFixed(2);
+        iSun.value = lightParams.sun;             lSun.textContent = lightParams.sun.toFixed(2);
+        iAmb.value = lightParams.ambient;         lAmb.textContent = lightParams.ambient.toFixed(2);
+        iSr.value  = lightParams.shadowRadius;    lSr.textContent  = lightParams.shadowRadius.toFixed(1);
+        iShI.value = lightParams.shadowIntensity; lShI.textContent = lightParams.shadowIntensity.toFixed(2);
+        iAz.value  = lightParams.sunAzimuth;      lAz.textContent  = lightParams.sunAzimuth.toFixed(0) + '°';
+        iAl.value  = lightParams.sunAltitude;     lAl.textContent  = lightParams.sunAltitude.toFixed(0) + '°';
+        iRot.value = lightParams.rotationSpeed;   lRot.textContent = lightParams.rotationSpeed.toFixed(2) + '°/f';
     }
     syncLightingHud();
     window.__hudSyncLighting = syncLightingHud;
@@ -1141,9 +1890,39 @@ function setupHud() {
     bindLight(iEnv, lEnv, 'envIntensity', v => v.toFixed(2));
     bindLight(iSun, lSun, 'sun',          v => v.toFixed(2));
     bindLight(iAmb, lAmb, 'ambient',      v => v.toFixed(2));
-    bindLight(iFil, lFil, 'fill',         v => v.toFixed(2));
-    bindLight(iEmi, lEmi, 'emissive',     v => v.toFixed(2));
-    bindLight(iSr,  lSr,  'shadowRadius', v => v.toFixed(1));
+    bindLight(iSr,  lSr,  'shadowRadius',    v => v.toFixed(1));
+    bindLight(iShI, lShI, 'shadowIntensity', v => v.toFixed(2));
+    bindLight(iAz,  lAz,  'sunAzimuth',      v => v.toFixed(0) + '°');
+    bindLight(iAl,  lAl,  'sunAltitude',     v => v.toFixed(0) + '°');
+    bindLight(iRot, lRot, 'rotationSpeed',   v => v.toFixed(2) + '°/f');
+
+    // City-lights brightness slider (lives on lightCycle, not lightParams,
+    // because it's a per-cycle constant rather than a per-frame param).
+    const lCity = $('lCity'), iCity = $('iCity');
+    if (iCity) {
+        iCity.value = lightCycle.cityLightsBrightness;
+        lCity.textContent = lightCycle.cityLightsBrightness.toFixed(1);
+        iCity.oninput = e => {
+            lightCycle.cityLightsBrightness = parseFloat(e.target.value);
+            lCity.textContent = lightCycle.cityLightsBrightness.toFixed(1);
+        };
+    }
+
+    // Day/night anchor colour pickers — 6 of them. Each writes its hex
+    // back into the matching THREE.Color in lightAnchors; the per-frame
+    // applyPhaseLighting() picks up the change on the very next frame.
+    function bindAnchor(elId, anchorKey) {
+        const el = $(elId);
+        if (!el) return;
+        el.value = '#' + lightAnchors[anchorKey].getHexString();
+        el.oninput = () => lightAnchors[anchorKey].set(el.value);
+    }
+    bindAnchor('cDaySun',   'daySun');
+    bindAnchor('cDuskSun',  'duskSun');
+    bindAnchor('cNightSun', 'nightSun');
+    bindAnchor('cDayEnv',   'dayEnv');
+    bindAnchor('cDuskEnv',  'duskEnv');
+    bindAnchor('cNightEnv', 'nightEnv');
 
     // Visibility toggles: each button's `armed` class always reflects the
     // current visible state, so it's clear whether the layer is on or off.
@@ -1160,34 +1939,46 @@ function setupHud() {
     bindVisibility('bToggleWater',  () => waterMesh.visible,        v => waterMesh.visible        = v);
     bindVisibility('bAdvanced',     () => advancedMode,             v => setAdvancedMode(v));
 
-    // Debug-layer row: one button per registered layer, mutually exclusive.
-    const layerRow = $('debugLayerRow');
-    for (const [name, layer] of Object.entries(DEBUG_LAYERS)) {
-        const b = document.createElement('button');
-        b.textContent = layer.label;
-        b.dataset.layer = name;
-        b.title = name;
+    // Debug-layer buttons (left column, statically rendered with data-layer).
+    // Mutually exclusive — clicking the active layer turns it off.
+    const layerBtns = document.querySelectorAll('button[data-layer]');
+    for (const b of layerBtns) {
         b.onclick = () => {
-            const now = setDebugLayer(name);
-            for (const c of layerRow.children) c.classList.toggle('armed', c.dataset.layer === now);
+            const now = setDebugLayer(b.dataset.layer);
+            for (const c of layerBtns) c.classList.toggle('armed', c.dataset.layer === now);
         };
-        layerRow.appendChild(b);
     }
 
-    // Mouse-mode row: mutually exclusive buttons that set window-scoped `mouseMode`.
-    const modeRow = $('modeRow');
-    for (const b of modeRow.querySelectorAll('button')) {
+    // Mouse-mode buttons (mixed across left + right columns: inspect on left,
+    // castle/farmer/merchant/road/delete on right). Mutually exclusive.
+    const modeBtns = document.querySelectorAll('button[data-mode]');
+    for (const b of modeBtns) {
         b.onclick = () => {
             const m = b.dataset.mode || null;
             mouseMode = (mouseMode === m) ? null : m;
             pendingRoadStart = null;
-            for (const c of modeRow.querySelectorAll('button')) {
-                c.classList.toggle('armed', (c.dataset.mode || null) === mouseMode);
-            }
+            for (const c of modeBtns) c.classList.toggle('armed', (c.dataset.mode || null) === mouseMode);
             if (!mouseMode && hoverMarker) hoverMarker.visible = false;
+            // Leaving inspect mode: drop the info panel and the close/far
+            // influence overlay.
+            if (mouseMode !== 'inspect') {
+                const ii = $('inspectInfo'); if (ii) ii.style.display = 'none';
+                clearInspectOverlay();
+            }
             refresh();
         };
     }
+
+    // Settings popup (⚙ in right column toggles it).
+    const panel = $('settingsPanel');
+    $('bSettings').onclick = () => {
+        panel.classList.toggle('hidden');
+        $('bSettings').classList.toggle('armed', !panel.classList.contains('hidden'));
+    };
+    $('bSettingsClose').onclick = () => {
+        panel.classList.add('hidden');
+        $('bSettings').classList.remove('armed');
+    };
 }
 
 function rebuildGeometryAfterElevChange() {
@@ -1195,6 +1986,7 @@ function rebuildGeometryAfterElevChange() {
         topoMesh.geometry.dispose();
         const m = topoMesh.material; scene.remove(topoMesh);
         topoMesh = buildTopo(); topoMesh.material = m; scene.add(topoMesh);
+        cacheTopoNormals();
     }
     if (waterMesh) waterMesh.position.y = waterLevel * elevScale;
     // Reposition all settlement markers, routes, debug overlay, and tile assets.
@@ -1205,6 +1997,7 @@ function rebuildGeometryAfterElevChange() {
     for (const obj of tileObjects.values()) tilesGroup.remove(obj);
     tileObjects.clear();
     syncTiles();
+    buildCityLights();
 }
 
 // ======================================================================
@@ -1220,15 +2013,99 @@ let _shadowHelper = null;
 // Lighting parameters — sliders in the HUD bind to these. setAdvancedMode
 // resets them to mode-appropriate defaults; you can then tune from there.
 const lightParams = {
-    exposure:     1.0,
-    envIntensity: 1.0,
-    sun:          1.0,
-    ambient:      0.4,
-    fill:         0.25,
-    emissive:     0.0,    // multiplier on each atlas material's albedo, applied as emissive
-    shadowRadius: 1.0,    // only used when shadowMap.type is PCFSoft
+    exposure:        1.74,
+    envIntensity:    0.01,
+    sun:             5.20,
+    ambient:         0.86,
+    shadowRadius:    0.5,
+    shadowIntensity: 0.6,
+    sunAzimuth:      0,      // degrees; advances every frame in advanced mode
+    sunAltitude:     25,
+    rotationSpeed:   1.0,    // degrees per frame; 0 = paused
 };
+
+// Anchor colours for the day/night cycle. The phase function blends these
+// based on the sun's azimuth: 150° day + 30° dusk + 150° night + 30° dawn = 360°.
+// Editable from the lighting panel via colour pickers.
+const lightAnchors = {
+    daySun:    new THREE.Color(0xfff1d6),   // pale warm cream
+    duskSun:   new THREE.Color(0xffd4b0),   // peach / soft salmon
+    nightSun:  new THREE.Color(0x888888),   // middle grey — keeps the city legible at night
+    dayEnv:    new THREE.Color(0xa6dcef),   // light sky blue
+    duskEnv:   new THREE.Color(0x3879dc),   // saturated mid blue
+    nightEnv:  new THREE.Color(0x1228a4),   // deep royal blue
+};
+const lightCycle = {
+    sunIntensityDay:    1.00,
+    sunIntensityDusk:   0.65,
+    sunIntensityNight:  0.18,
+    hemiIntensityDay:   0.55,
+    hemiIntensityDusk:  0.45,
+    hemiIntensityNight: 0.30,
+    nightLightsPeak:    1.00,   // city-lights overlay opacity at full night
+    nightLightsTwilightPeak: 0.50,
+    cityLightsBrightness: 2.4,   // HDR multiplier on the additive city-lights mesh
+};
+
+// Phase weights at a given azimuth. Always sums to 1.
+//   0..150   day        (1, 0, 0)
+//   150..180 dusk       linear day→twilight→night
+//   180..330 night      (0, 1, 0)
+//   330..360 dawn       linear night→twilight→day
+function computePhase(azimuthDeg) {
+    const a = ((azimuthDeg % 360) + 360) % 360;
+    let dayW = 0, nightW = 0, twilightW = 0;
+    if (a < 150) {
+        dayW = 1;
+    } else if (a < 180) {
+        const t = (a - 150) / 30;
+        if (t < 0.5) { const u = t * 2; dayW = 1 - u; twilightW = u; }
+        else         { const u = (t - 0.5) * 2; twilightW = 1 - u; nightW = u; }
+    } else if (a < 330) {
+        nightW = 1;
+    } else {
+        const t = (a - 330) / 30;
+        if (t < 0.5) { const u = t * 2; nightW = 1 - u; twilightW = u; }
+        else         { const u = (t - 0.5) * 2; twilightW = 1 - u; dayW = u; }
+    }
+    return { dayW, nightW, twilightW };
+}
+
+const _tmpC = new THREE.Color();
+function blendAnchors(target, day, dusk, night, w) {
+    target.setRGB(0, 0, 0);
+    _tmpC.copy(day).multiplyScalar(w.dayW);       target.add(_tmpC);
+    _tmpC.copy(dusk).multiplyScalar(w.twilightW); target.add(_tmpC);
+    _tmpC.copy(night).multiplyScalar(w.nightW);   target.add(_tmpC);
+    return target;
+}
+const SUN_RADIUS = 1200;
+function updateSunPosition() {
+    const az = lightParams.sunAzimuth * Math.PI / 180;
+    const al = lightParams.sunAltitude * Math.PI / 180;
+    sun.position.set(
+        SUN_RADIUS * Math.cos(al) * Math.sin(az),
+        SUN_RADIUS * Math.sin(al),
+        SUN_RADIUS * Math.cos(al) * Math.cos(az),
+    );
+    sun.target.updateMatrixWorld();
+    // shadowFill rides along with the sun so the two directional
+    // contributions cancel correctly on lit fragments.
+    shadowFill.position.copy(sun.position);
+    shadowFill.target.position.copy(sun.target.position);
+    shadowFill.target.updateMatrixWorld();
+    // In day mode, the shadow map needs to rebuild every frame because the
+    // sun moves; otherwise we leave it on the static cache.
+    if (advancedMode && renderer.shadowMap.autoUpdate === false) {
+        renderer.shadowMap.needsUpdate = true;
+    }
+}
+
 function applyLightParams() {
+    updateSunPosition();
+    // sun.shadow.intensity would be the proper knob but it's r166+; we
+    // emulate it by splitting the directional light's intensity between
+    // a shadow-caster and a non-shadow-caster — see applyPhaseLighting.
     renderer.toneMappingExposure = lightParams.exposure;
     // Env: gate scene.environment + drive contribution via per-material
     // envMapIntensity. This is more reliable than scene.environmentIntensity
@@ -1244,28 +2121,17 @@ function applyLightParams() {
     });
     sun.intensity                = lightParams.sun;
     ambient.intensity            = lightParams.ambient;
-    fill.intensity               = lightParams.fill;
     sun.shadow.radius            = lightParams.shadowRadius;
-    // Apply the emissive multiplier to every atlas material that captured
-    // its original albedo at load time.
-    if (atlasNodes) {
-        const seen = new Set();
-        for (const node of atlasNodes.values()) {
-            node.traverse((o) => {
-                if (!o.isMesh || !o.material || seen.has(o.material)) return;
-                seen.add(o.material);
-                const orig = o.material.userData?._origEmissive;
-                if (orig && o.material.emissive) {
-                    o.material.emissive.copy(orig).multiplyScalar(lightParams.emissive);
-                }
-            });
-        }
-    }
 }
 
 function setAdvancedMode(on) {
     advancedMode = !!on;
     renderer.shadowMap.enabled = advancedMode;
+    // When the sun rotates, the shadow direction changes every frame, so
+    // we let three.js redraw the shadow map every frame. When rotationSpeed
+    // is 0 (cycle paused), shadows can be cached.
+    renderer.shadowMap.autoUpdate = advancedMode && lightParams.rotationSpeed > 0;
+    if (advancedMode) renderer.shadowMap.needsUpdate = true;
     if (advancedMode) {
         // Env map IS the ambient source. Turn off AmbientLight + fill
         // DirectionalLight defaults; they stack on top of env and blow
@@ -1274,19 +2140,32 @@ function setAdvancedMode(on) {
         renderer.toneMapping    = THREE.ACESFilmicToneMapping;
         renderer.shadowMap.type = THREE.PCFShadowMap;
         Object.assign(lightParams, {
-            exposure: 0.7, envIntensity: 0.006, sun: 4, ambient: 0, fill: 0,
-            emissive: 0, shadowRadius: 1.0,
+            exposure: 1.0, envIntensity: 0.01, sun: 4.0, ambient: 0.4,
+            shadowRadius: 0.5, sunAltitude: 25, rotationSpeed: 1.0,
+            // Don't reset sunAzimuth — keep wherever the cycle was when last left.
         });
     } else {
         scene.environment       = null;
         renderer.toneMapping    = THREE.NoToneMapping;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         Object.assign(lightParams, {
-            exposure: 1.0, envIntensity: 1.0, sun: 1.0, ambient: 0.4, fill: 0.25,
-            emissive: 0, shadowRadius: 1.0,
+            exposure: 1.0, envIntensity: 1.0, sun: 1.0, ambient: 0.4,
+            shadowRadius: 1.0, sunAzimuth: 60, sunAltitude: 55,
+            rotationSpeed: 0,
         });
+        // Park the cycle: white sun, no hemi, no city lights, no shadow fill.
+        sun.color.setRGB(1.0, 0.93, 0.86);
+        hemi.color.setRGB(0.69, 0.85, 1.0);
+        hemi.groundColor.setRGB(0.13, 0.13, 0.20);
+        hemi.intensity = 0;
+        shadowFill.intensity = 0;
+        if (cityLightsGroup.children.length) {
+            cityLightsGroup.children[0].material.opacity = 0;
+            cityLightsGroup.children[0].visible = false;
+        }
     }
     applyLightParams();
+    if (advancedMode) applyPhaseLighting();
     if (typeof window.__hudSyncLighting === 'function') window.__hudSyncLighting();
     // Toggling shadowMap.enabled requires shaders to recompile.
     scene.traverse((o) => {
@@ -1295,6 +2174,56 @@ function setAdvancedMode(on) {
             else                            o.material.needsUpdate = true;
         }
     });
+}
+
+// Apply the day/night-cycle lighting. Reads the current azimuth, blends
+// sun and env anchor colours by phase, sets sun + hemi intensities,
+// drives the city-lights overlay opacity. Cheap (~6 colour ops + a few
+// scalar lerps) — safe to call every frame.
+const _sunCol = new THREE.Color();
+const _envCol = new THREE.Color();
+const _grdCol = new THREE.Color();
+function applyPhaseLighting() {
+    const w = computePhase(lightParams.sunAzimuth);
+    blendAnchors(_sunCol, lightAnchors.daySun, lightAnchors.duskSun, lightAnchors.nightSun, w);
+    blendAnchors(_envCol, lightAnchors.dayEnv, lightAnchors.duskEnv, lightAnchors.nightEnv, w);
+    sun.color.copy(_sunCol);
+    shadowFill.color.copy(_sunCol);
+    hemi.color.copy(_envCol);
+    // Ground tint = a darker version of the sky tint so the hemi reads as
+    // sky-colour above, dim earth-colour below.
+    _grdCol.copy(_envCol).multiplyScalar(0.18);
+    hemi.groundColor.copy(_grdCol);
+
+    const sunPhaseI = w.dayW * lightCycle.sunIntensityDay
+                    + w.twilightW * lightCycle.sunIntensityDusk
+                    + w.nightW * lightCycle.sunIntensityNight;
+    const totalI    = lightParams.sun * sunPhaseI;
+    const shadowF   = Math.max(0, Math.min(1, lightParams.shadowIntensity));
+    // Split the directional light into a shadow-casting half and a
+    // non-shadow-casting half. shadowF=1 → all goes through the
+    // shadow-caster (full pitch-black shadow). shadowF=0 → all goes
+    // through the fill (no visible shadow).
+    sun.intensity        = totalI * shadowF;
+    shadowFill.intensity = totalI * (1 - shadowF);
+
+    hemi.intensity = w.dayW * lightCycle.hemiIntensityDay
+                   + w.twilightW * lightCycle.hemiIntensityDusk
+                   + w.nightW * lightCycle.hemiIntensityNight;
+
+    // City lights ride on the night/twilight weights — only visible after dark.
+    const lightsAlpha = w.nightW * lightCycle.nightLightsPeak
+                      + w.twilightW * lightCycle.nightLightsTwilightPeak;
+    if (cityLightsGroup.children.length) {
+        const m = cityLightsGroup.children[0].material;
+        m.opacity = lightsAlpha;
+        m.color.setRGB(
+            lightCycle.cityLightsBrightness,
+            lightCycle.cityLightsBrightness,
+            lightCycle.cityLightsBrightness,
+        );
+        cityLightsGroup.children[0].visible = lightsAlpha > 0.005;
+    }
 }
 
 // Debug: visualise the sun's shadow camera frustum. Call from the JS
@@ -1317,6 +2246,15 @@ window.toggleShadowHelper = function () {
 // ======================================================================
 (function loop() {
     controls.update();
+    // Continuous day/night cycle — only when advanced is on. The sun
+    // rotates by `rotationSpeed`°/frame; setting it to 0 pauses.
+    if (advancedMode) {
+        if (lightParams.rotationSpeed > 0) {
+            lightParams.sunAzimuth = (lightParams.sunAzimuth + lightParams.rotationSpeed) % 360;
+            updateSunPosition();
+        }
+        applyPhaseLighting();
+    }
     if (advancedMode) composer.render();
     else              renderer.render(scene, camera);
     requestAnimationFrame(loop);

@@ -12,7 +12,10 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(python -c \"import json; d=json.load\\(open\\('topo_json/large_rome.json'\\)\\); print\\('top-level keys:', list\\(d.keys\\(\\)\\)\\); print\\('mapping keys:', list\\(d['mapping'].keys\\(\\)\\)\\); v = d['vertices'][0]; print\\('vertex keys:', list\\(v.keys\\(\\)\\)\\); print\\('first tile keys:', list\\(d['tiles'][0].keys\\(\\)\\)\\)\")",
-      "Bash(grep -nE \"^\\\\s{4,8}\\([a-zA-Z_][a-zA-Z0-9_]*\\)\\\\\\(\" 15_settlement.js)"
+      "Bash(grep -nE \"^\\\\s{4,8}\\([a-zA-Z_][a-zA-Z0-9_]*\\)\\\\\\(\" 15_settlement.js)",
+      "Bash(awk 'NR>=1019 && NR<=1024' index.html)",
+      "Bash(awk 'NR>1019 {n++; if \\(/^}/ && n>5\\) {print \"function ends at line: \" NR; exit}}' index.html)",
+      "Bash(awk 'NR>=145 && NR<=185' index.html)"
     ]
   }
 }

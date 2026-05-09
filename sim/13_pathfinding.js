@@ -150,6 +150,9 @@ function pathFinding(start, end, trafficWeight) {
                     if (forwardEdge.trafficCount === undefined)
                         forwardEdge.trafficCount = 0;
                     forwardEdge.trafficCount += trafficWeight;
+                    // Per-traversal counter for the path-dependency cost
+                    // factor (see Vertex.calculateMovementCosts).
+                    forwardEdge.travelCount = (forwardEdge.travelCount || 0) + 1;
                 }
 
                 // Increment trafficCount on the edge from next to current (mutual)
@@ -160,6 +163,7 @@ function pathFinding(start, end, trafficWeight) {
                     if (backwardEdge.trafficCount === undefined)
                         backwardEdge.trafficCount = 0;
                     backwardEdge.trafficCount += trafficWeight;
+                    backwardEdge.travelCount = (backwardEdge.travelCount || 0) + 1;
                 }
             }
         }

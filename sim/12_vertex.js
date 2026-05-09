@@ -88,16 +88,18 @@ class Vertex {
             Math.sqrt(this._security);
     }
 
-    // Calculate farm value based on terrain, water access, and steepness
+    // Calculate farm value based on terrain, water access, and steepness.
+    // Smooth quadratic high-ground penalty up to farmElevationThreshold so
+    // farm value shows a gradient instead of the previous binary cutoff.
     calculateFarmValue(hasWaterAccess, farmElevationThreshold) {
-        if (this.water || this.elevation > farmElevationThreshold) {
+        if (this.water) {
             this.farmValue = 0;
             return;
         }
 
         let farmVal = 1;
 
-        if (hasWaterAccess) farmVal *= 2;
+        if (hasWaterAccess) farmVal *= 3;
 
         // Steepness bonus and penalties
         if (this.steepness >= 0.01 && this.steepness <= 0.05) {
@@ -105,6 +107,14 @@ class Vertex {
         }
         if (this.steepness > 0.12) {
             farmVal = 0;
+        }
+
+        // Quadratic high-ground penalty: 1 at sea level → 0 at threshold.
+        const t = Math.max(0, this.elevation) / Math.max(1, farmElevationThreshold);
+        if (t >= 1) {
+            farmVal = 0;
+        } else {
+            farmVal *= 1 - t * t;
         }
 
         this.farmValue = farmVal;
@@ -215,12 +225,15 @@ class Vertex {
                 moveCost = distance * waterTransportFactor;
             }
 
-            // Apply traffic reduction: 1 traffic = 30% reduction, 100 traffic = 50% reduction
-            if (neighbor.trafficCount > 0) {
-                const trafficClamped = Math.min(neighbor.trafficCount, 100);
-                // Lerp between 0.7 (30% reduction) and 0.5 (50% reduction)
-                const reductionFactor = 0.7 - (trafficClamped / 100) * 0.2;
-                moveCost *= reductionFactor;
+            // Path dependency: a previously-trodden edge is cheaper to use.
+            // factor(n) = 1/(2n) + 1/2  for n >= 1, where n is the number of
+            // travels along this edge. n=1 → 1.0 (no change), n=2 → 0.75,
+            // n=10 → 0.55, n→∞ → 0.5. Stored separately from trafficCount
+            // (which still drives merchant value) so the two can vary
+            // independently.
+            const travels = neighbor.travelCount || 0;
+            if (travels > 0) {
+                moveCost *= 1 / (2 * travels) + 0.5;
             }
 
             neighbor.moveCost = moveCost;

@@ -90,7 +90,7 @@ window.simulationStep      = 0;
 window.waterLevel              = 14;
 window.UnhabitableLevel        = 120;
 window.modeChangeCost          = 50;
-window.waterTransportFactor    = 0.01;
+window.waterTransportFactor    = 1.0;
 window.FARM_ELEVATION_THRESHOLD = 80;
 
 // --- p5 width/height; populated from the loaded mapping at bootstrap. ---

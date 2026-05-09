@@ -8,8 +8,8 @@ let professions = ["Lord", "Farmer", "Merchant"];
 let farmerRange = 50; // in canvas pixels
 let waterAccessDist = 200; // in canvas pixels
 let FARM_ELEVATION_THRESHOLD = 150; // Elevation above which farming is not viable
-let MIDDLE_RANGE = 350; // Movement cost budget for farmer value calculation
-let SHORT_RANGE = 100; // Movement cost budget for vicinity calculation
+let MIDDLE_RANGE = 200; // Movement cost budget for farmer value calculation (far influence)
+let SHORT_RANGE  = 70;  // Movement cost budget for vicinity calculation (close influence)
 let vertexQuadtree = null; // Quadtree for spatial queries
 let farmerVertexIndices = new Set(); // Vertex indices currently occupied by Farmer settlements
 // Note: tradeDestination1 and tradeDestination2 are defined in sketch.js
@@ -349,29 +349,44 @@ function createLord() {
     }
     // console.log("Creating Lord from", habitable.length, "habitable vertices");
 
-    // Use p5.js built-in width and height variables
-    const canvasWidth = width;
-    const canvasHeight = height;
+    // The map is a flat-top regular hexagon. Per the project TODO, the
+    // first castle should sit at least R/3 from the border (where R is
+    // the long radius of the hex), not just inside the rectangular
+    // 50%-of-canvas bbox the original used.
+    const _hexCx = topoData.mapping.hexCenter.x;
+    const _hexCy = topoData.mapping.hexCenter.y;
+    const _hexR  = (topoData.mapping.hexBounds.maxX - topoData.mapping.hexBounds.minX) / 2;
+    const _apo   = _hexR * Math.sqrt(3) / 2;        // apothem (centre→edge)
+    const _S     = Math.sqrt(3) / 2;
+    const _margin = _hexR / 3;
+    function _distToHexBorder(hx, hy) {
+        const dx = hx - _hexCx, dy = hy - _hexCy;
+        // Distance to each of the 6 hex edges (positive = inside).
+        return Math.min(
+            _apo - dy,
+            _apo + dy,
+            _apo - ( dx * _S + dy * 0.5),
+            _apo - (-dx * _S + dy * 0.5),
+            _apo - ( dx * _S - dy * 0.5),
+            _apo - (-dx * _S - dy * 0.5),
+        );
+    }
 
-    // Define central area bounds (middle 50% of map)
-    const minX = canvasWidth * 0.25;
-    const maxX = canvasWidth * 0.75;
-    const minY = canvasHeight * 0.25;
-    const maxY = canvasHeight * 0.75;
-
-    // Filter habitable vertices to only central area
-    const centralHabitable = habitable.filter(
-        (v) => v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY,
+    let centralHabitable = habitable.filter(
+        (v) => _distToHexBorder(v.hexX, v.hexY) >= _margin,
     );
 
     if (centralHabitable.length === 0) {
         console.warn(
-            "No habitable vertices in central area, using all habitable",
+            `No habitable vertex ≥ R/3 (${_margin.toFixed(1)}) from hex border; using all habitable`,
         );
-        centralHabitable.push(...habitable);
+        centralHabitable = habitable.slice();
     }
 
-    console.log("Central habitable vertices:", centralHabitable.length);
+    console.log(
+        "Central habitable vertices (≥ R/3 from hex border):",
+        centralHabitable.length,
+    );
 
     // Farm and farmer values should already be calculated from initializeSimulationValues()
     // No need to recalculate them here

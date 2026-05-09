@@ -97,3 +97,25 @@ next is a large step, think about how to implement it. \2511_Hexagonal_World\ind
   finding parameter panel. and there're two accessible level parameters ( a close          
   influence and a far inflence distance cost), we need control of these two parameters     
   too in the panel.    
+
+
+instruction:
+the skewing of the building blocks with the elevation of the highest vertices of the quad added to the building seems false. a clean skewing without the elevation add should be used instead
+
+instruction:
+❯ 1.look into the styles of the 2D version interface, the buttons are circular and look nicer. the 
+  auto simulate button is bigger than the others.                                                 
+  turn off the settlement marker by default. 
+  2. the 2D version has a cross region trade route created at the beginning, whose start-end points were hard coded. but we do a randomly generated route in this version. the start and end points are at the vertices (a sign of edge vertex is that it is in only 2 quads), and the euclideandistance between them should be larger than the z span of the board. all merchants when spawned will also do pathfinding to the start-end points of the regional trade route. take reference from the 2D version.
+  3. path dependency in path- finding : a travel on a path will reduce the cost factor of it. this factor start with 1.0, when number of travel = 1; factor = 1/2/n + 1/2; the factor is stored in the vertex - neighbor attribute. 
+  4. the color code for defense value is not well ranged. it should have larger range of color, yellow - green - blue spanning the high to low.
+  5. the elevation color code should follow the classical code.
+  6. the farmhouse "1" should be upgraded to merchant "2", once it has a higher merchant value. I am not sure about the exact value, I think it should be some value where travelled for 20 times or so.
+  7. the "farm value" should have a penalty for high ground, I am not sure if it is implemented. it should be. now the fare value does not show a high range.
+  8. use the music, the starting interface, but don't make kinect option. but use the three cities "hongkong, rome, tokyo" and wire in the map json they use. copy the assets to the project folder.
+
+instruction:
+draw the traffic routes in the way that the width is proportional to the traffic flow.
+
+instruction:
+influence range: close to 50, far to 150
