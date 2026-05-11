@@ -22,7 +22,14 @@
       "Bash(cp 2511_Hexagonal_World/map/tokyo/topo_small.json topo_json/large_tokyo.json)",
       "Bash(cp 2511_Hexagonal_World/assets/arts/hongkong_vignette.jpg assets/arts/)",
       "Bash(python *)",
-      "WebFetch(domain:www.rattenstadt.com)"
+      "WebFetch(domain:www.rattenstadt.com)",
+      "Bash(grep -nE \"^\\(function |const |let |//\\)\" \"C:/Users/qli/Desktop/IT/2605_SpringShow/sim/main.js\")",
+      "Bash(grep *)",
+      "Bash(awk NR==2120||NR==2121||NR==2122||NR==2123||NR==2124||NR==2125||NR==2126||NR==2127||NR==2128||NR==2529||NR==2530||NR==2531||NR==2810||NR==2811||NR==2812||NR==2813||NR==2814||NR==2815||NR==2828||NR==2829||NR==2830||NR==2831||NR==2832||NR==2833 *)",
+      "Bash(awk '/^function setupHud\\\\\\(\\\\\\)/,/^function rebuildGeometryAfterElevChange\\\\\\(\\\\\\)/{print NR\": \"$0; if\\($0 ~ /^function rebuildGeometryAfterElevChange/\\) exit}' \"C:/Users/qli/Desktop/IT/2605_SpringShow/sim/main.js\")",
+      "Bash(awk *)",
+      "Bash(sed -i '2812,2832d' sim/main.js)",
+      "Bash(sed -i '2125,2531d' sim/main.js)"
     ]
   }
 }
