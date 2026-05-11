@@ -911,15 +911,16 @@ function setDebugLayer(name) {
 // ======================================================================
 // Demonstration mode — cycles through every debug layer with on-screen
 // labels, like the reference 2D simulation's 🎬 button. Each layer
-// shows for DEMO_LAYER_FRAMES frames, then blank for DEMO_GAP_FRAMES,
-// then the next layer.
+// shows for DEMO_LAYER_MS, then blank for DEMO_GAP_MS, then the next
+// layer. Time-based (performance.now()) instead of frame-based, so the
+// pacing is the same regardless of render framerate.
 // ======================================================================
-let demoMode      = false;
-let demoFrame     = 0;
-let demoLayerIdx  = 0;
-let demoShowing   = true;          // true = a layer is on; false = gap
-const DEMO_LAYER_FRAMES = 126;     // ~2.1 s at 60 fps (display time -30%)
-const DEMO_GAP_FRAMES   = 39;      // ~0.65 s blank between layers (gap +30%)
+let demoMode        = false;
+let demoPhaseStart  = 0;           // timestamp (ms) when current phase began
+let demoLayerIdx    = 0;
+let demoShowing     = true;        // true = a layer is on; false = gap
+const DEMO_LAYER_MS = 2100;        // 2.1 s display per layer
+const DEMO_GAP_MS   = 650;         // 0.65 s blank between layers
 const DEMO_ORDER = [
     'elevation', 'defense', 'security', 'farmValue', 'farmerValue',
     'merchantValue', 'steepness', 'trafficCount', 'habitable', 'occupied',
@@ -928,9 +929,9 @@ function _demoLabelEl() { return document.getElementById('demoLabel'); }
 function setDemoMode(on) {
     demoMode = !!on;
     if (demoMode) {
-        demoFrame    = 0;
-        demoLayerIdx = 0;
-        demoShowing  = true;
+        demoPhaseStart = performance.now();
+        demoLayerIdx   = 0;
+        demoShowing    = true;
         const first = DEMO_ORDER[0];
         if (DEBUG_LAYERS[first]) {
             activeDebugLayer = first;
@@ -958,19 +959,19 @@ function setDemoMode(on) {
 }
 function tickDemoMode() {
     if (!demoMode) return;
-    demoFrame++;
-    if (demoShowing && demoFrame >= DEMO_LAYER_FRAMES) {
-        demoFrame   = 0;
-        demoShowing = false;
+    const elapsed = performance.now() - demoPhaseStart;
+    if (demoShowing && elapsed >= DEMO_LAYER_MS) {
+        demoPhaseStart = performance.now();
+        demoShowing    = false;
         // hide layer + label during the gap
         if (debugMesh) debugMesh.visible = false;
         const lbl = _demoLabelEl();
         if (lbl) lbl.classList.remove('show');
-    } else if (!demoShowing && demoFrame >= DEMO_GAP_FRAMES) {
-        demoFrame    = 0;
-        demoShowing  = true;
-        demoLayerIdx = (demoLayerIdx + 1) % DEMO_ORDER.length;
-        const name   = DEMO_ORDER[demoLayerIdx];
+    } else if (!demoShowing && elapsed >= DEMO_GAP_MS) {
+        demoPhaseStart = performance.now();
+        demoShowing    = true;
+        demoLayerIdx   = (demoLayerIdx + 1) % DEMO_ORDER.length;
+        const name     = DEMO_ORDER[demoLayerIdx];
         if (DEBUG_LAYERS[name]) {
             activeDebugLayer = name;
             if (debugMesh) {
