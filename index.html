@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>City Sim · 3D</title>
+<title>AlgorithmsOfCity</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #15191e;
                font-family: sans-serif; color: #222; font-size: 14px; }
@@ -94,6 +94,18 @@
                     letter-spacing: 2px; margin: 0; }
   #titleScreen p { font-family: Georgia, serif; color: rgba(240,230,210,0.7);
                    margin: 0; font-size: 16px; }
+  #titleAuthor { font-family: Georgia, serif; color: rgba(240,230,210,0.85);
+                 font-size: 14px; font-style: italic; margin-top: 8px;
+                 text-shadow: 1px 1px 4px rgba(0,0,0,0.7); }
+  #titleNav    { display: flex; flex-wrap: wrap; gap: 18px 26px;
+                 justify-content: center; max-width: 880px; margin-top: 6px;
+                 font-family: Georgia, serif; font-size: 14px;
+                 color: rgba(240,230,210,0.85);
+                 text-shadow: 1px 1px 4px rgba(0,0,0,0.7); }
+  #titleNav a  { color: rgba(240,230,210,0.85); text-decoration: none;
+                 border-bottom: 1px solid rgba(240,230,210,0.25);
+                 padding-bottom: 1px; transition: color 0.15s, border-color 0.15s; }
+  #titleNav a:hover { color: #fff; border-bottom-color: #fff; }
   .city-row { display: flex; gap: 60px; justify-content: center; align-items: center;
               margin-top: 20px; }
   .city-tile { width: 400px; height: 500px; padding: 0;
@@ -143,7 +155,6 @@
 <!-- Title screen with city selection (a la 2D version) -->
 <div id="titleScreen">
     <h1>The Algorithms of the City</h1>
-    <p>pick a city to begin</p>
     <div class="city-row">
         <button class="city-tile" data-city="hongkong" data-topo="topo_json/large_hongkong.json">
             <img src="assets/arts/hongkong_vignette.jpg" alt="Hong Kong">
@@ -158,7 +169,21 @@
             <span class="city-name">Tokyo</span>
         </button>
     </div>
-    <p style="margin-top:24px;color:#566">click a tile — music starts on first interaction</p>
+    <div id="titleAuthor">author: Richard Qian Li &mdash; architect, land planner, programmer</div>
+    <nav id="titleNav">
+        <a href="https://www.rattenstadt.com/index.html"                                 target="_blank" rel="noopener">Home</a>
+        <a href="https://www.rattenstadt.com/arch.html"                                  target="_blank" rel="noopener">Architecture &amp; Urban Design</a>
+        <a href="https://www.rattenstadt.com/coding.html"                                target="_blank" rel="noopener">Coding &amp; Generative Arts</a>
+        <a href="https://www.rattenstadt.com/gallery.html"                               target="_blank" rel="noopener">Drawings</a>
+        <a href="https://the-book-an-evolutionary-history-of-the-city.vercel.app/?chapter=0"
+                                                                                         target="_blank" rel="noopener">The Book</a>
+        <a href="https://www.ximalaya.com/album/3733966"                                 target="_blank" rel="noopener">Podcasts</a>
+        <a href="https://github.com/ludwigpeking?tab=repositories"                       target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.linkedin.com/in/qian-li-944a0510/"                          target="_blank" rel="noopener">LinkedIn</a>
+        <a href="https://www.youtube.com/channel/UC70EKdkg918fqyimJ5-fNMA"               target="_blank" rel="noopener">YouTube</a>
+        <a href="https://twitter.com/urban_banal"                                        target="_blank" rel="noopener">Twitter</a>
+        <a href="mailto:ludwig.peking@gmail.com">Email</a>
+    </nav>
 </div>
 
 <!-- Background music. <audio> can autoplay only after a user gesture; the
@@ -186,6 +211,7 @@
     <button class="ui-btn" id="bToggleWater"   title="water plane">🌊</button>
     <button class="ui-btn" id="bEdges"         title="show edges (SketchUp-style line overlay)">🔲</button>
     <button class="ui-btn" id="bMono"          title="monochrome — replace every tile material (except water) with white matte">⚪</button>
+    <button class="ui-btn" id="bRefl"          title="water reflection — mirror the city below the water plane">🪞</button>
     <button class="ui-btn" id="bAdvanced"      title="advanced lighting (shadows + day/night cycle + city lights)">✨</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" data-layer="elevation"     title="elevation">⛰️</button>
@@ -355,9 +381,13 @@ camera.position.set(890, 1050, 1160);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
+// Cap pixel ratio at 1.5 — on retina/4K screens devicePixelRatio is 2–3,
+// which quadruples the pixel work for every pass (shadow, reflection,
+// SSAO, main render). 1.5 still looks crisp; perf wins are large.
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = false;            // toggled by advanced-lighting button
 renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.localClippingEnabled = true;           // needed for the water-reflection clip plane
 document.body.appendChild(renderer.domElement);
 
 // PMREM-baked indoor-ish environment, used as `scene.environment` when
@@ -546,11 +576,13 @@ scene.add(sun.target);
 // Shadow camera frustum sized for the topo extent (~ ±900 in XZ, 0..600 in Y
 // after exaggeration). Generous bias keeps acne off the gentle slopes.
 sun.castShadow                 = true;
-// 8192² shadow map — high-quality static shadows for advanced mode. When
-// `renderer.shadowMap.autoUpdate = false` (set when day-mode is OFF), this
-// renders once per scene change instead of every frame, so the per-frame
-// cost is small even at this size.
-sun.shadow.mapSize.set(8192, 8192);
+// 4096² shadow map — was 8192², which redraws ~5000 tiles into a
+// 67 MiB texture every frame when day/night rotation is on. 4096² is
+// 4× cheaper and still produces crisp shadows at this map's scale.
+// (When rotation is paused, `shadowMap.autoUpdate = false` keeps this
+// from re-rendering every frame, but only the steady-state cost — the
+// allocation and any forced rebuild still benefits from the smaller size.)
+sun.shadow.mapSize.set(4096, 4096);
 // Tighten the shadow camera to the actual map extent — smaller frustum =
 // better depth precision per shadow texel.
 sun.shadow.camera.near         = 200;
@@ -626,6 +658,7 @@ const _EDGE_SKIP_COLORS = new Set(['e2e2bc', 'c2bab6', '88afb1']);
 // material is stashed on userData so we can restore on toggle-off.
 const _WATER_COLOR_HEX = '88afb1';
 const monoMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+// monoMat.clippingPlanes is attached below, once _origClipPlane is declared.
 let monoEnabled = false;
 function _isWaterMat(m)  { return !!(m && m.color && m.color.getHexString() === _WATER_COLOR_HEX); }
 function _applyMono(mesh) {
@@ -642,6 +675,146 @@ function _restoreMono(mesh) {
 function setMonoEnabled(on) {
     monoEnabled = on;
     tilesGroup.traverse(o => { if (o.isMesh) (on ? _applyMono : _restoreMono)(o); });
+    // Reflections share geometry with the originals but use cloned
+    // (clip-enabled) materials. Refresh so reflection colour tracks mono.
+    if (reflEnabled) refreshAllReflectionMats();
+}
+
+// ======================================================================
+// Water reflection. The above-water portion of every tile mesh is
+// mirrored across the water plane and drawn beneath it, visible through
+// the translucent water. Implementation notes:
+//
+//   - One Mesh per tile sub-mesh shares the *same BufferGeometry* as the
+//     original; only an extra Mesh wrapper, a clipped material, and a
+//     parent matrix per tile are allocated, so this is roughly a fixed
+//     +50% on the tile-rendering cost.
+//   - The reflectionsGroup carries the mirror transform (scale y = -1,
+//     translate y = 2·waterY) — the originals are untouched.
+//   - A world-space clipping plane keeps anything that would land
+//     above-water clipped out, so submerged geometry never floats up
+//     into the sky after the mirror.
+//   - Reflections don't cast or receive shadow.
+// ======================================================================
+const reflectionsGroup       = new THREE.Group();
+reflectionsGroup.matrixAutoUpdate = false;
+reflectionsGroup.visible     = false;        // default off — toggled by 🪞 button
+scene.add(reflectionsGroup);
+const tileReflObjects        = new Map();              // tile.id → reflection host Group
+// Two world-space clip planes, both anchored on the actual water plane Y.
+//   _reflClipPlane: keeps y <  waterY → applied to reflection materials,
+//                   trims off the parts of the mirror that would land
+//                   above the water plane.
+//   _origClipPlane: keeps y >= waterY → applied to *original* atlas
+//                   materials, so the originals also stop at the water
+//                   plane (and don't occlude the reflection from above
+//                   through the translucent water).
+const _reflClipPlane         = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+const _origClipPlane         = new THREE.Plane(new THREE.Vector3(0,  1, 0), 0);
+// Wire the original-side clip into the shared monoMat (defined earlier).
+monoMat.clippingPlanes = [_origClipPlane];
+const _reflMatCache          = new WeakMap();          // source material → clipped clone
+let   reflEnabled            = false;                  // default off — toggled by 🪞 button
+function _updateReflectionTransforms() {
+    // Single source of truth: the `waterLevel` parameter that the ⚙
+    // settings-panel slider (`iW`) writes to. The water mesh, both
+    // clip planes, and the mirror transform all derive from this one
+    // value, so the slider drives everything in lockstep.
+    const waterY = window.waterLevel * elevScale;
+    // Mirror across y = waterY: y' = 2·waterY - y.
+    reflectionsGroup.matrix.set(
+        1,  0, 0, 0,
+        0, -1, 0, 2 * waterY,
+        0,  0, 1, 0,
+        0,  0, 0, 1,
+    );
+    reflectionsGroup.matrixWorldNeedsUpdate = true;
+    // Refl plane:  -y + waterY > 0 → y < waterY (below water — reflection).
+    _reflClipPlane.constant =  waterY;
+    // Orig plane:   y - waterY > 0 → y > waterY (above water — originals).
+    _origClipPlane.constant = -waterY;
+}
+function _getReflMat(srcMat) {
+    if (_reflMatCache.has(srcMat)) return _reflMatCache.get(srcMat);
+    // Darker copy of the source colour, with tone mapping BYPASSED.
+    // The composer pass (advanced mode) applies ACES tone mapping which
+    // boosts dark midtones back up — that's why `tint.multiplyScalar()`
+    // alone looked unchanged. `toneMapped: false` tells three.js to emit
+    // this fragment as-is, so the darkening actually shows on screen.
+    // DIAGNOSTIC: force pure black so we can confirm this material is
+    // actually what the reflection meshes are using. If reloaded and the
+    // reflection still looks bright/coloured, the issue is upstream of
+    // _getReflMat (probably the cache being skipped or the reflection
+    // mesh using the original material somewhere).
+    const tint = new THREE.Color(0x000000);
+    const mat = new THREE.MeshBasicMaterial({
+        color:          tint,
+        side:           THREE.DoubleSide,
+        toneMapped:     false,
+        clippingPlanes: [_reflClipPlane],
+        clipShadows:    false,
+    });
+    _reflMatCache.set(srcMat, mat);
+    return mat;
+}
+function _buildReflHost(host) {
+    const rHost = new THREE.Group();
+    for (const m of host.children) {
+        if (!m.isMesh || !m.geometry) continue;
+        const refl = new THREE.Mesh(m.geometry, _getReflMat(m.material));
+        refl.castShadow    = false;
+        refl.receiveShadow = false;
+        rHost.add(refl);
+    }
+    return rHost;
+}
+function _disposeReflHost(rHost) {
+    // Geometries are shared with the originals — never dispose those here.
+    // Materials are cached by source and re-used across tiles, so we leave
+    // them too. Just detach the Group.
+    reflectionsGroup.remove(rHost);
+}
+function disposeTileReflection(tileId) {
+    const r = tileReflObjects.get(tileId);
+    if (r) { _disposeReflHost(r); tileReflObjects.delete(tileId); }
+}
+function placeTileReflection(tileId, host) {
+    disposeTileReflection(tileId);
+    if (!reflEnabled) return;
+    const rHost = _buildReflHost(host);
+    rHost.userData._tileId = tileId;
+    reflectionsGroup.add(rHost);
+    tileReflObjects.set(tileId, rHost);
+}
+function clearAllTileReflections() {
+    for (const rHost of tileReflObjects.values()) _disposeReflHost(rHost);
+    tileReflObjects.clear();
+}
+// Rebuild every reflection mesh's material from the corresponding source
+// material — called when monochrome flips, since reflection materials are
+// clones of whichever material the original mesh is currently using.
+function refreshAllReflectionMats() {
+    for (const rHost of tileReflObjects.values()) {
+        let i = 0;
+        for (const tileMesh of (tileObjects.get(rHost.userData._tileId)?.children || [])) {
+            if (!tileMesh.isMesh) continue;
+            const refl = rHost.children[i++];
+            if (refl) refl.material = _getReflMat(tileMesh.material);
+        }
+    }
+}
+function setReflectionsEnabled(on) {
+    reflEnabled = on;
+    reflectionsGroup.visible = on;
+    if (!on) { clearAllTileReflections(); return; }
+    _updateReflectionTransforms();
+    for (const [tileId, host] of tileObjects.entries()) {
+        if (tileReflObjects.has(tileId)) continue;
+        const rHost = _buildReflHost(host);
+        rHost.userData._tileId = tileId;
+        reflectionsGroup.add(rHost);
+        tileReflObjects.set(tileId, rHost);
+    }
 }
 function _buildEdgeHost(host) {
     const eHost = new THREE.Group();
@@ -789,7 +962,10 @@ function buildWater() {
     const cxw  = hexC.x - cx;
     const czw  = hexC.y - cz;
 
-    // 7 vertices: centre + 6 hex corners at 0°, 60°, 120°, 180°, 240°, 300°.
+    // Simple translucent hex water plane in world XZ. No planar-reflection
+    // pass, no shader: the custom dark mirror meshes underneath provide
+    // the reflection, and the water plane just tints what's visible
+    // through it. Cheap to render.
     const positions = [cxw, 0, czw];
     for (let i = 0; i < 6; i++) {
         const a = i * Math.PI / 3;
@@ -806,13 +982,27 @@ function buildWater() {
     g.computeVertexNormals();
 
     const m = new THREE.MeshStandardMaterial({
-        color: 0x3a7ca5, transparent: true, opacity: 0.6,
-        side: THREE.DoubleSide, metalness: 0.2, roughness: 0.35,
+        color:      0x3a7ca5,
+        transparent: true,
+        opacity:    0.35,
+        side:       THREE.DoubleSide,
+        // High roughness + near-zero metalness keeps the sun glint
+        // diffuse instead of a tight specular highlight.
+        metalness:  0.02,
+        roughness:  0.85,
+        // depthWrite must be false on a translucent surface so the dark
+        // reflection meshes behind it actually show through and aren't
+        // z-occluded by the water-plane's own depth.
+        depthWrite: false,
     });
 
     const mesh = new THREE.Mesh(g, m);
     mesh.position.y = waterLevel * elevScale;
     return mesh;
+}
+function _tickWater() {
+    // Plain plane — no time uniform to update. Kept as a no-op so the
+    // render loop's call site doesn't have to be conditional.
 }
 
 // ======================================================================
@@ -872,6 +1062,10 @@ async function loadAtlas() {
             transparent: !!orig.transparent,
             opacity:     orig.opacity != null ? orig.opacity : 1,
             side:        THREE.DoubleSide,
+            // Clip the original tile geometry at the water plane so the
+            // underwater portion of every asset is removed (the water
+            // plane + dark reflection take over below the waterline).
+            clippingPlanes: [_origClipPlane],
             // emissive defaults to (0,0,0) on a fresh Lambert — exactly
             // what we want; no glTF-injected self-light will sneak in.
         });
@@ -1337,6 +1531,7 @@ function restartSimulation() {
         tileObjects.clear();
     }
     if (typeof clearAllTileEdges  === 'function') clearAllTileEdges();
+    if (typeof clearAllTileReflections === 'function') clearAllTileReflections();
     if (typeof syncSettlements    === 'function') syncSettlements();
     if (typeof syncRoutes         === 'function') syncRoutes();
     if (typeof syncTiles          === 'function') syncTiles();
@@ -1804,6 +1999,7 @@ function placeTileAsset(tile, sig) {
             tileObjects.delete(tile.id);
         }
         disposeTileEdges(tile.id);
+        disposeTileReflection(tile.id);
         return;
     }
 
@@ -1825,6 +2021,22 @@ function placeTileAsset(tile, sig) {
     const v2 = vertexByIndex.get(tile.vertexIndices[2]);
     const v3 = vertexByIndex.get(tile.vertexIndices[3]);
     if (!v0 || !v1 || !v2 || !v3) return;
+    // Fully-submerged tiles get no asset at all. The water plane covers
+    // the surface and the mirrored reflection lives just beneath it; an
+    // underwater 'w' ground would otherwise block the reflection from
+    // the camera's view through the translucent water.
+    const _wL = window.waterLevel;
+    if (v0.elevation <= _wL && v1.elevation <= _wL && v2.elevation <= _wL && v3.elevation <= _wL) {
+        const obj = tileObjects.get(tile.id);
+        if (obj) {
+            for (const c of obj.children) c.geometry?.dispose();
+            tilesGroup.remove(obj);
+            tileObjects.delete(tile.id);
+        }
+        disposeTileEdges(tile.id);
+        disposeTileReflection(tile.id);
+        return;
+    }
     const c0 = worldVec3(v0).clone();
     const c1 = worldVec3(v1).clone();
     const c2 = worldVec3(v2).clone();
@@ -1862,6 +2074,13 @@ function placeTileAsset(tile, sig) {
     // the transform, not in the buffer — so we read positions directly).
     node.traverse((child) => {
         if (!child.isMesh) return;
+        // Drop the per-asset 'water' surface mesh. It's the opaque block
+        // sitting just under the water plane; without removing it the
+        // reflection copies (mirrored below the water) would be hidden
+        // behind it. The translucent waterMesh is the only thing we want
+        // to see at water level — the reflection lives directly beneath.
+        if (child.material && child.material.color
+            && child.material.color.getHexString() === _WATER_COLOR_HEX) return;
         const srcPos = child.geometry.getAttribute('position');
         const srcIdx = child.geometry.getIndex();
         const N = srcPos.count;
@@ -1995,6 +2214,8 @@ function placeTileAsset(tile, sig) {
     // now while we still know which tile id they belonged to. Cheap when
     // the overlay is off (placeTileEdges no-ops in that case).
     placeTileEdges(tile.id, host);
+    // Same pattern for the mirrored reflection copy below the water.
+    placeTileReflection(tile.id, host);
 }
 
 function syncTiles() {
@@ -2057,6 +2278,7 @@ async function init(topoUrl) {
     cacheTopoNormals();
     waterMesh = buildWater();  scene.add(waterMesh);
     buildDebugMesh();
+    _updateReflectionTransforms();   // anchor the reflection mirror to current waterLevel
 
     setStatus('loading assets/atlas_3d.glb ...');
     try {
@@ -2354,6 +2576,19 @@ function setupHud() {
         if (waterMesh) waterMesh.position.y = waterLevel * elevScale;
         // Mirror to the hidden #waterLevel input the sim reads via select().
         document.getElementById('waterLevel').value = waterLevel;
+        // Re-anchor the water-reflection plane to the new level.
+        _updateReflectionTransforms();
+    };
+    // When the user releases the slider, re-evaluate which tiles are now
+    // fully underwater (their signature doesn't change, so syncTiles would
+    // otherwise skip them) — clear the cache so placeTileAsset re-runs.
+    iW.onchange = () => {
+        lastSigByTileId.clear();
+        for (const obj of tileObjects.values()) tilesGroup.remove(obj);
+        tileObjects.clear();
+        clearAllTileEdges();
+        clearAllTileReflections();
+        syncTiles();
     };
 
     // ---- Parameters panel -------------------------------------------------
@@ -2512,6 +2747,8 @@ function setupHud() {
                                     v => setEdgesEnabled(v));
     bindVisibility('bMono',         () => monoEnabled,
                                     v => setMonoEnabled(v));
+    bindVisibility('bRefl',         () => reflEnabled,
+                                    v => setReflectionsEnabled(v));
     bindVisibility('bAutoRestart',  () => autoRestartEnabled,
                                     v => { autoRestartEnabled = v; });
     bindVisibility('bAdvanced',     () => advancedMode,             v => setAdvancedMode(v));
@@ -2607,7 +2844,9 @@ function rebuildGeometryAfterElevChange() {
     lastSigByTileId.clear();
     for (const obj of tileObjects.values()) tilesGroup.remove(obj);
     tileObjects.clear();
-    clearAllTileEdges();   // tile geometry rebuilt below
+    clearAllTileEdges();        // tile geometry rebuilt below
+    clearAllTileReflections();
+    _updateReflectionTransforms();
     syncTiles();
     buildCityLights();
 }
@@ -2629,7 +2868,7 @@ const lightParams = {
     envIntensity:    0.01,
     sun:             5.20,
     ambient:         0.86,
-    shadowRadius:    1.0,
+    shadowRadius:    1.5,
     shadowIntensity: 0.9,
     shadowBias:      -0.0008,
     sunAzimuth:      0,      // degrees; advances every frame in advanced mode
@@ -2665,17 +2904,17 @@ const lightCycle = {
 };
 
 // Phase weights at a given azimuth. Always sums to 1.
-//   0..150   day        (1, 0, 0)
-//   150..180 dusk       linear day→twilight→night
-//   180..330 night      (0, 1, 0)
-//   330..360 dawn       linear night→twilight→day
+//   0..210   day        (210°)
+//   210..240 dusk       (30°)  day→twilight→night
+//   240..330 night      (90°)
+//   330..360 dawn       (30°)  night→twilight→day
 function computePhase(azimuthDeg) {
     const a = ((azimuthDeg % 360) + 360) % 360;
     let dayW = 0, nightW = 0, twilightW = 0;
-    if (a < 150) {
+    if (a < 210) {
         dayW = 1;
-    } else if (a < 180) {
-        const t = (a - 150) / 30;
+    } else if (a < 240) {
+        const t = (a - 210) / 30;
         if (t < 0.5) { const u = t * 2; dayW = 1 - u; twilightW = u; }
         else         { const u = (t - 0.5) * 2; twilightW = 1 - u; nightW = u; }
     } else if (a < 330) {
@@ -2770,7 +3009,7 @@ function setAdvancedMode(on) {
             // (in lightCycle below) was likewise dialled down so the top
             // fill doesn't flatten the whole map.
             exposure: 1.0, envIntensity: 0.0, sun: 4.0, ambient: 0.10,
-            shadowRadius: 0.5, sunAltitude: 25, rotationSpeed: 1.0,
+            shadowRadius: 1.5, sunAltitude: 25, rotationSpeed: 1.0,
             // Don't reset sunAzimuth — keep wherever the cycle was when last left.
         });
     } else {
@@ -2779,7 +3018,7 @@ function setAdvancedMode(on) {
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         Object.assign(lightParams, {
             exposure: 1.0, envIntensity: 1.0, sun: 1.0, ambient: 0.4,
-            shadowRadius: 1.0, sunAzimuth: 60, sunAltitude: 55,
+            shadowRadius: 1.5, sunAzimuth: 60, sunAltitude: 55,
             rotationSpeed: 0,
         });
         // Park the cycle: white sun, no hemi, no city lights, no shadow fill.
@@ -2885,6 +3124,7 @@ window.toggleShadowHelper = function () {
         applyPhaseLighting();
     }
     tickDemoMode();
+    _tickWater();
     if (advancedMode) composer.render();
     else              renderer.render(scene, camera);
     requestAnimationFrame(loop);

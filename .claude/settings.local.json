@@ -21,7 +21,8 @@
       "Bash(cp 2511_Hexagonal_World/map/hongkong/hongkong_topo.json topo_json/large_hongkong.json)",
       "Bash(cp 2511_Hexagonal_World/map/tokyo/topo_small.json topo_json/large_tokyo.json)",
       "Bash(cp 2511_Hexagonal_World/assets/arts/hongkong_vignette.jpg assets/arts/)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "WebFetch(domain:www.rattenstadt.com)"
     ]
   }
 }
