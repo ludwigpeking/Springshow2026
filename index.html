@@ -21,17 +21,19 @@
   .ui-col { position: absolute; top: 20px; display: flex; flex-direction: column;
             gap: 6px; z-index: 10; padding: 0; background: transparent; }
   #leftCol  { left:  20px; }
-  #rightCol { right: 20px; }
+  /* Right-align inside the column so 50-px buttons share a right edge with
+     the 75-px bAuto button (and with the bottom-right orbit/audio stack). */
+  #rightCol { right: 20px; align-items: flex-end; }
 
   /* Round button base — literal port of the reference style. */
-  .ui-btn { width: 50px; height: 50px; padding: 0; margin: 0;
+  .ui-btn { width: 50px; height: 50px; padding: 0; margin: 0; box-sizing: border-box;
             font-size: 24px; line-height: 1;
             border: 2px solid #333; border-radius: 50%;
             background-color: rgba(255, 255, 255, 0.7);
             color: #222;
             cursor: pointer;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            transition: transform 0.2s, background-color 0.3s;
+            transition: transform 0.08s, background-color 0.15s;
             display: flex; align-items: center; justify-content: center; }
   .ui-btn.text { font-size: 14px; font-family: Georgia, serif; font-weight: bold; }
   .ui-btn:hover { transform: scale(1.1); }
@@ -109,14 +111,16 @@
                           color: #f0e6d2; text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
                           pointer-events: none; }
 
-  /* Audio toggle on bottom-right */
-  #bAudio { position: absolute; bottom: 20px; right: 20px; z-index: 8; }
+  /* Bottom-right stack: orbit + audio toggles. Right edge lines up with
+     the right column (and therefore with the ⚙ settings button). */
+  #bottomRightStack { position: absolute; bottom: 20px; right: 20px; z-index: 8;
+                      display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 
   /* Demonstration text overlay — drawn over the canvas at the bottom */
-  #demoLabel { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+  #demoLabel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
                z-index: 6; pointer-events: none; opacity: 0;
                font-family: Georgia, serif; font-size: 36px; font-weight: bold;
-               letter-spacing: 4px; color: #f0e6d2;
+               letter-spacing: 4px; color: #f0e6d2; text-align: center;
                text-shadow: 2px 2px 8px rgba(0,0,0,0.85), 0 0 24px rgba(0,0,0,0.5);
                transition: opacity 0.4s; }
   #demoLabel.show { opacity: 1; }
@@ -148,7 +152,10 @@
      city-tile click triggers it. -->
 <audio id="bgMusic" src="assets/sounds/PoncePreludioInEMajor.mp3" loop preload="auto"></audio>
 
-<button class="ui-btn" id="bAudio" title="toggle music">🔇</button>
+<div id="bottomRightStack">
+    <button class="ui-btn" id="bOrbit" title="toggle camera orbiting">🌀</button>
+    <button class="ui-btn" id="bAudio" title="toggle music">🔇</button>
+</div>
 
 <!-- Big text overlay used by the demonstration cycle to label the
      currently-shown debug layer over the canvas. -->
@@ -162,7 +169,6 @@
     <button class="ui-btn" id="bDemo"            title="🎬 demonstration mode — cycles through every debug layer with on-screen labels">🎬</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bToggleTiles"   title="city tiles">🏙️</button>
-    <button class="ui-btn" id="bToggleSettle"  title="settlement markers">🏘️</button>
     <button class="ui-btn" id="bToggleRoutes"  title="route polylines">⛓</button>
     <button class="ui-btn" id="bToggleTopo"    title="topography mesh (hidden by default)">🗺️</button>
     <button class="ui-btn" id="bToggleWater"   title="water plane">🌊</button>
@@ -253,6 +259,7 @@
       <label title="AmbientLight">ambient <span id="lAmb"></span><input id="iAmb" type="range" min="0" max="3" step="0.02"></label>
       <label title="sun.shadow.radius">shadow blur <span id="lSr"></span><input id="iSr" type="range" min="0" max="10" step="0.1"></label>
       <label title="sun.shadow.intensity — 0 = no shadow, 1 = pitch black">shadow opacity <span id="lShI"></span><input id="iShI" type="range" min="0" max="1" step="0.02"></label>
+      <label title="sun.shadow.bias — small offset against shadow acne. Try ±0.001">shadow bias <span id="lSb"></span><input id="iSb" type="range" min="-0.01" max="0.01" step="0.0001"></label>
       <label title="sun azimuth, deg">sun azimuth <span id="lAz"></span><input id="iAz" type="range" min="0" max="360" step="1"></label>
       <label title="sun altitude, deg above horizon">sun altitude <span id="lAl"></span><input id="iAl" type="range" min="5" max="89" step="1"></label>
       <label title="cycle speed, degrees per frame (0 = paused)">rotation speed <span id="lRot"></span><input id="iRot" type="range" min="0" max="5" step="0.05"></label>
@@ -783,16 +790,9 @@ function markerMat(profession) {
 }
 
 function syncSettlements() {
+    // Marker drawing is disabled — tile assets already show the city.
     while (settlementsGroup.children.length) {
         settlementsGroup.remove(settlementsGroup.children[0]);
-    }
-    for (const s of settlements) {
-        if (!s.vertex) continue;
-        const m = new THREE.Mesh(markerGeom, markerMat(s.profession));
-        m.position.set(worldXOf(s.vertex), worldYOf(s.vertex) + 3, worldZOf(s.vertex));
-        m.userData.settlement = s;
-        m.castShadow = true;
-        settlementsGroup.add(m);
     }
 }
 
@@ -927,9 +927,21 @@ function refreshDebugColors() {
 
 function setDebugLayer(name) {
     activeDebugLayer = (activeDebugLayer === name) ? null : name;
-    if (!debugMesh) return;
-    debugMesh.visible = activeDebugLayer != null;
-    if (activeDebugLayer) refreshDebugColors();
+    if (debugMesh) {
+        debugMesh.visible = activeDebugLayer != null;
+        if (activeDebugLayer) refreshDebugColors();
+    }
+    // Mirror demo-mode behaviour: show the layer's label centered at the
+    // bottom of the screen while the layer is active.
+    const lbl = _demoLabelEl();
+    if (lbl) {
+        if (activeDebugLayer && DEBUG_LAYERS[activeDebugLayer]) {
+            lbl.textContent = (DEBUG_LAYERS[activeDebugLayer].label || activeDebugLayer).toUpperCase();
+            lbl.classList.add('show');
+        } else {
+            lbl.classList.remove('show');
+        }
+    }
     return activeDebugLayer;
 }
 
@@ -943,8 +955,8 @@ let demoMode      = false;
 let demoFrame     = 0;
 let demoLayerIdx  = 0;
 let demoShowing   = true;          // true = a layer is on; false = gap
-const DEMO_LAYER_FRAMES = 180;     // ~3 s at 60 fps
-const DEMO_GAP_FRAMES   = 30;      // ~0.5 s blank between layers
+const DEMO_LAYER_FRAMES = 126;     // ~2.1 s at 60 fps (display time -30%)
+const DEMO_GAP_FRAMES   = 39;      // ~0.65 s blank between layers (gap +30%)
 const DEMO_ORDER = [
     'elevation', 'defense', 'security', 'farmValue', 'farmerValue',
     'merchantValue', 'steepness', 'trafficCount', 'habitable', 'occupied',
@@ -2158,6 +2170,7 @@ function setupHud() {
     const lAmb = $('lAmb'), iAmb = $('iAmb');
     const lSr  = $('lSr'),  iSr  = $('iSr');
     const lShI = $('lShI'), iShI = $('iShI');
+    const lSb  = $('lSb'),  iSb  = $('iSb');
     const lAz  = $('lAz'),  iAz  = $('iAz');
     const lAl  = $('lAl'),  iAl  = $('iAl');
     const lRot = $('lRot'), iRot = $('iRot');
@@ -2168,6 +2181,7 @@ function setupHud() {
         iAmb.value = lightParams.ambient;         lAmb.textContent = lightParams.ambient.toFixed(2);
         iSr.value  = lightParams.shadowRadius;    lSr.textContent  = lightParams.shadowRadius.toFixed(1);
         iShI.value = lightParams.shadowIntensity; lShI.textContent = lightParams.shadowIntensity.toFixed(2);
+        iSb.value  = lightParams.shadowBias;      lSb.textContent  = lightParams.shadowBias.toFixed(4);
         iAz.value  = lightParams.sunAzimuth;      lAz.textContent  = lightParams.sunAzimuth.toFixed(0) + '°';
         iAl.value  = lightParams.sunAltitude;     lAl.textContent  = lightParams.sunAltitude.toFixed(0) + '°';
         iRot.value = lightParams.rotationSpeed;   lRot.textContent = lightParams.rotationSpeed.toFixed(2) + '°/f';
@@ -2187,6 +2201,7 @@ function setupHud() {
     bindLight(iAmb, lAmb, 'ambient',      v => v.toFixed(2));
     bindLight(iSr,  lSr,  'shadowRadius',    v => v.toFixed(1));
     bindLight(iShI, lShI, 'shadowIntensity', v => v.toFixed(2));
+    bindLight(iSb,  lSb,  'shadowBias',      v => v.toFixed(4));
     bindLight(iAz,  lAz,  'sunAzimuth',      v => v.toFixed(0) + '°');
     bindLight(iAl,  lAl,  'sunAltitude',     v => v.toFixed(0) + '°');
     bindLight(iRot, lRot, 'rotationSpeed',   v => v.toFixed(2) + '°/f');
@@ -2228,7 +2243,6 @@ function setupHud() {
         b.onclick = () => { setter(!getter()); sync(); };
     }
     bindVisibility('bToggleTiles',  () => tilesGroup.visible,       v => tilesGroup.visible       = v);
-    bindVisibility('bToggleSettle', () => settlementsGroup.visible, v => settlementsGroup.visible = v);
     bindVisibility('bToggleRoutes', () => routesGroup.visible,      v => routesGroup.visible      = v);
     bindVisibility('bToggleTopo',   () => topoMesh.visible,         v => topoMesh.visible         = v);
     bindVisibility('bToggleWater',  () => waterMesh.visible,        v => waterMesh.visible        = v);
@@ -2320,8 +2334,9 @@ const lightParams = {
     envIntensity:    0.01,
     sun:             5.20,
     ambient:         0.86,
-    shadowRadius:    0.5,
-    shadowIntensity: 0.6,
+    shadowRadius:    1.0,
+    shadowIntensity: 0.9,
+    shadowBias:      -0.0008,
     sunAzimuth:      0,      // degrees; advances every frame in advanced mode
     sunAltitude:     25,
     rotationSpeed:   1.0,    // degrees per frame; 0 = paused
@@ -2342,9 +2357,13 @@ const lightCycle = {
     sunIntensityDay:    1.00,
     sunIntensityDusk:   0.65,
     sunIntensityNight:  0.18,
-    hemiIntensityDay:   0.55,
-    hemiIntensityDusk:  0.45,
-    hemiIntensityNight: 0.30,
+    // Hemi is the cool sky-tint fill on upward-facing surfaces. Kept
+    // modest so the dominant sun reads as the dominant light source —
+    // pumping hemi up just flattens the whole map regardless of what
+    // the sun is doing.
+    hemiIntensityDay:   0.35,
+    hemiIntensityDusk:  0.30,
+    hemiIntensityNight: 0.20,
     nightLightsPeak:    1.00,   // city-lights overlay opacity at full night
     nightLightsTwilightPeak: 0.50,
     cityLightsBrightness: 2.4,   // HDR multiplier on the additive city-lights mesh
@@ -2425,6 +2444,8 @@ function applyLightParams() {
     sun.intensity                = lightParams.sun;
     ambient.intensity            = lightParams.ambient;
     sun.shadow.radius            = lightParams.shadowRadius;
+    sun.shadow.bias              = lightParams.shadowBias;
+    if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
 }
 
 function setAdvancedMode(on) {
@@ -2436,14 +2457,24 @@ function setAdvancedMode(on) {
     renderer.shadowMap.autoUpdate = advancedMode && lightParams.rotationSpeed > 0;
     if (advancedMode) renderer.shadowMap.needsUpdate = true;
     if (advancedMode) {
-        // Env map IS the ambient source. Turn off AmbientLight + fill
-        // DirectionalLight defaults; they stack on top of env and blow
-        // everything out otherwise.
-        scene.environment       = ENV_MAP;
-        renderer.toneMapping    = THREE.ACESFilmicToneMapping;
+        // SDR palette — authored colors should ride at ~1:1. Linear tone
+        // mapping passes them through unchanged until they clip; ACES
+        // rolled off highlights and desaturated mids toward filmic gray,
+        // which washed the painted SketchUp palette. Keep scene.environment
+        // off by default — Hemi provides the cool sky tint, and the bright
+        // RoomEnvironment was raising the floor on every face. envIntensity
+        // is still a slider if the user wants it back.
+        scene.environment       = null;
+        renderer.toneMapping    = THREE.LinearToneMapping;
         renderer.shadowMap.type = THREE.PCFShadowMap;
         Object.assign(lightParams, {
-            exposure: 1.0, envIntensity: 0.01, sun: 4.0, ambient: 0.4,
+            // Dominant sun + quiet ambient = real outdoor contrast. With
+            // ambient at 0.4 the shadow side was only ~0.5 below the lit
+            // side; cutting ambient to 0.10 widens the lit/shadow gap to
+            // roughly 4:1 on a sky-facing Lambert face. Hemi day intensity
+            // (in lightCycle below) was likewise dialled down so the top
+            // fill doesn't flatten the whole map.
+            exposure: 1.0, envIntensity: 0.0, sun: 4.0, ambient: 0.10,
             shadowRadius: 0.5, sunAltitude: 25, rotationSpeed: 1.0,
             // Don't reset sunAzimuth — keep wherever the cycle was when last left.
         });
@@ -2586,6 +2617,16 @@ function setAudioOn(on) {
     }
 }
 bAudio.onclick = () => setAudioOn(bgMusic.paused);
+
+// Camera-orbit toggle. controls.autoRotate is initialised true (above),
+// so the button starts armed; clicking flips it. OrbitControls already
+// pauses autoRotate while the user is dragging and resumes on release.
+const bOrbit = document.getElementById('bOrbit');
+function syncOrbitButton() {
+    bOrbit.classList.toggle('armed', controls.autoRotate);
+}
+syncOrbitButton();
+bOrbit.onclick = () => { controls.autoRotate = !controls.autoRotate; syncOrbitButton(); };
 
 for (const tile of document.querySelectorAll('.city-tile')) {
     tile.onclick = () => {

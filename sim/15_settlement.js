@@ -200,9 +200,6 @@ function initializeSimulationValues() {
 
     console.log(`Calculated steepness for ${steepnessCount} vertices`);
 
-    // Calculate defense values using vertex method
-    calculateDefenseValues();
-
     // Build quadtree for spatial queries BEFORE farm-value calculation
     // so the water-access lookup uses range queries instead of O(N) scans.
     console.log("Building quadtree for spatial optimization...");
@@ -217,8 +214,13 @@ function initializeSimulationValues() {
     // Calculate initial farm values based on terrain (uses quadtree above)
     calculateInitialFarmValues();
 
-    // Calculate initial farmer values (merchant values auto-update via setters)
+    // Calculate initial farmer values (merchant values auto-update via setters).
+    // This populates each vertex's vincinityNeighbors / floodedNeighbors, which
+    // the redefined defense formula reads, so defense must come after.
     calculateFarmerValues();
+
+    // Defense uses the close/far influence regimes populated above.
+    calculateDefenseValues();
 
     console.log("Simulation values initialized");
 }
@@ -281,12 +283,12 @@ function initializeHabitable() {
         }
     });
 
-    // Calculate defense values based on terrain
-    calculateDefenseValues();
-
-    // Calculate farm and farmer values so they're ready for settlement placement
+    // Calculate farm and farmer values so they're ready for settlement
+    // placement. calculateFarmerValues populates vincinity/floodedNeighbors,
+    // which defense now reads — so defense runs last.
     calculateInitialFarmValues();
     calculateFarmerValues();
+    calculateDefenseValues();
 }
 
 // Populate habitable array without recalculating values (when values are already initialized)

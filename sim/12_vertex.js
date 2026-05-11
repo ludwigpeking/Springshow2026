@@ -120,33 +120,27 @@ class Vertex {
         this.farmValue = farmVal;
     }
 
-    // Calculate defense value based on elevation and terrain roughness
+    // Defense = avg(elevation over close-influence regime)
+    //         - avg(elevation over far-influence regime).
+    // Close regime = self + vincinityNeighbors (SHORT_RANGE flood).
+    // Far   regime = self + floodedNeighbors   (MIDDLE_RANGE flood).
+    // Positive when the vertex sits on a local high; negative in a basin.
     calculateDefense() {
         if (!this.habitable) {
             this.defense = 0;
             return;
         }
-
-        // Defense increases with elevation and roughness
-        // let defenseValue = this.elevation * 2;
-        let defenseValue = this.elevation / 2;
-
-        // Check neighbors for elevation difference (roughness)
-        let totalElevDiff = 0;
-        let neighborCount = 0;
-        this.neighbors.forEach((neighbor) => {
-            if (neighbor.elevationDiff !== undefined) {
-                totalElevDiff -= neighbor.elevationDiff;
-                neighborCount++;
-            }
-        });
-
-        if (neighborCount > 0) {
-            const avgRoughness = totalElevDiff / neighborCount;
-            defenseValue += avgRoughness * 10;
+        const closeSet = this.vincinityNeighbors;
+        const farSet   = this.floodedNeighbors;
+        if (!closeSet || !farSet || closeSet.length === 0 || farSet.length === 0) {
+            this.defense = 0;
+            return;
         }
-
-        this.defense = defenseValue;
+        let closeSum = this.elevation, closeCount = 1;
+        for (const v of closeSet) { closeSum += v.elevation; closeCount++; }
+        let farSum = this.elevation, farCount = 1;
+        for (const v of farSet) { farSum += v.elevation; farCount++; }
+        this.defense = (closeSum / closeCount) - (farSum / farCount);
     }
 
     // Calculate steepness (average absolute slope to neighbors)
