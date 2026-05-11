@@ -172,6 +172,7 @@
     <button class="ui-btn" id="bToggleRoutes"  title="route polylines">⛓</button>
     <button class="ui-btn" id="bToggleTopo"    title="topography mesh (hidden by default)">🗺️</button>
     <button class="ui-btn" id="bToggleWater"   title="water plane">🌊</button>
+    <button class="ui-btn" id="bEdges"         title="show edges (SketchUp-style line overlay)">🔲</button>
     <button class="ui-btn" id="bAdvanced"      title="advanced lighting (shadows + day/night cycle + city lights)">✨</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" data-layer="elevation"     title="elevation">⛰️</button>
@@ -577,7 +578,86 @@ const tilesGroup       = new THREE.Group(); scene.add(tilesGroup);
 const routesGroup      = new THREE.Group(); scene.add(routesGroup);
 routesGroup.visible    = false;            // off by default — toggle ⛓ in left column to show
 const inspectGroup     = new THREE.Group(); scene.add(inspectGroup);   // close/far influence overlays
-const cityLightsGroup  = new THREE.Group(); scene.add(cityLightsGroup); // night-time merchant-driven city lights
+const cityLightsGroup  = new THREE.Group(); scene.add(cityLightsGroup); // night-time security-driven city lights
+
+// SketchUp-style edge overlay. THREE.EdgesGeometry extracts crease edges
+// (pairs of faces whose normals differ by more than EDGE_ANGLE_DEG) from
+// each tile mesh and the topo, drawn as black LineSegments on top. Off
+// by default — toggle 🔲 in the left column.
+//
+// Cheap strategy: edges are built per tile inside placeTileAsset and
+// cached. syncTiles already short-circuits unchanged tiles via the
+// signature map, so unchanged tiles keep their edges across spawns.
+// When the overlay is turned off the cache is dropped; when it's turned
+// on we lazily fill in edges for whichever tiles are currently placed.
+const edgesGroup       = new THREE.Group(); scene.add(edgesGroup);
+edgesGroup.visible     = false;
+const _edgeMat         = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.85 });
+const EDGE_ANGLE_DEG   = 25;
+let   edgesEnabled     = false;            // mirrors edgesGroup.visible
+const tileEdgeObjects  = new Map();        // tile.id → edge host Group
+// topoMesh deliberately gets no edges — its tessellation is the underlying
+// Voronoi mesh, which would draw bold polygon outlines across all terrain.
+
+// Materials that shouldn't show edges. The GLB strips material *names* so
+// we can't filter by name; identify by the (Lambert) color hex instead.
+// Hex values come from materials.mtl after sRGB → linear gamma:
+//   'w'     ground  → e2e2bc  (cell-seam outlines)
+//   'road'  strip   → c2bab6
+//   'water' sea     → 88afb1  (Voronoi outlines under the sea)
+const _EDGE_SKIP_COLORS = new Set(['e2e2bc', 'c2bab6', '88afb1']);
+function _buildEdgeHost(host) {
+    const eHost = new THREE.Group();
+    for (const m of host.children) {
+        if (!m.isMesh || !m.geometry || !m.material) continue;
+        const col = m.material.color;
+        const hex = col ? col.getHexString() : '';
+        if (_EDGE_SKIP_COLORS.has(hex)) continue;
+        const eg = new THREE.EdgesGeometry(m.geometry, EDGE_ANGLE_DEG);
+        eHost.add(new THREE.LineSegments(eg, _edgeMat));
+    }
+    return eHost;
+}
+function _disposeEdgeHost(eHost) {
+    for (const c of eHost.children) c.geometry?.dispose();
+    edgesGroup.remove(eHost);
+}
+// Drop a single tile's cached edges. Called whenever placeTileAsset is
+// about to replace that tile's host meshes — the cached lines no longer
+// match the new geometry.
+function disposeTileEdges(tileId) {
+    const e = tileEdgeObjects.get(tileId);
+    if (e) { _disposeEdgeHost(e); tileEdgeObjects.delete(tileId); }
+}
+// Build (or rebuild) edges for one tile. No-op when the overlay is off,
+// so placeTileAsset can call it unconditionally.
+function placeTileEdges(tileId, host) {
+    disposeTileEdges(tileId);
+    if (!edgesEnabled) return;
+    const eHost = _buildEdgeHost(host);
+    edgesGroup.add(eHost);
+    tileEdgeObjects.set(tileId, eHost);
+}
+// Drop every cached edge — used when callers wipe tileObjects directly
+// (bResync / restartSimulation / rebuildGeometryAfterElevChange).
+function clearAllTileEdges() {
+    for (const eHost of tileEdgeObjects.values()) _disposeEdgeHost(eHost);
+    tileEdgeObjects.clear();
+}
+// Toggle handler: just flip visibility and, on enable, lazily build the
+// edges that aren't cached yet (i.e. all of them on first turn-on, or
+// any tiles placed while the overlay was off).
+function setEdgesEnabled(on) {
+    edgesEnabled = on;
+    edgesGroup.visible = on;
+    if (!on) return;
+    for (const [tileId, host] of tileObjects.entries()) {
+        if (tileEdgeObjects.has(tileId)) continue;
+        const eHost = _buildEdgeHost(host);
+        edgesGroup.add(eHost);
+        tileEdgeObjects.set(tileId, eHost);
+    }
+}
 
 let topoMesh = null, waterMesh = null;
 // Cached smooth topo normals, one per JSON vertex. Used by placeTileAsset
@@ -1214,6 +1294,7 @@ function restartSimulation() {
         for (const obj of tileObjects.values()) tilesGroup.remove(obj);
         tileObjects.clear();
     }
+    if (typeof clearAllTileEdges  === 'function') clearAllTileEdges();
     if (typeof syncSettlements    === 'function') syncSettlements();
     if (typeof syncRoutes         === 'function') syncRoutes();
     if (typeof syncTiles          === 'function') syncTiles();
@@ -1452,9 +1533,15 @@ function buildCityLights() {
         c.material?.dispose();
         cityLightsGroup.remove(c);
     }
-    let maxMV = 0;
-    for (const v of vertices) if (v.merchantValue > maxMV) maxMV = v.merchantValue;
-    if (maxMV <= 0) return;
+    // Security has a baseline of 1 on every vertex; settlements boost it
+    // above that. We light off the boost (security - 1) so the entire map
+    // doesn't glow at the baseline — only settled areas.
+    let maxSec = 0;
+    for (const v of vertices) {
+        const s = (v.security || 0) - 1;
+        if (s > maxSec) maxSec = s;
+    }
+    if (maxSec <= 0) return;
 
     const N = vertices.length;
     const positions = new Float32Array(N * 3);
@@ -1464,10 +1551,11 @@ function buildCityLights() {
         positions[i*3]     = worldXOf(v);
         positions[i*3 + 1] = worldYOf(v) + CITY_LIGHTS_LIFT;
         positions[i*3 + 2] = worldZOf(v);
-        // Linear normalised merchant value (raw activity reads through —
-        // busy markets blaze, quiet ones stay dim). HDR brightness is
+        // Linear normalised security boost — well-guarded centres blaze,
+        // edges of the security influence fade out. HDR brightness is
         // cranked through material.color so the linear ramp is fine.
-        const intensity = v.merchantValue > 0 ? v.merchantValue / maxMV : 0;
+        const s = Math.max(0, (v.security || 0) - 1);
+        const intensity = s / maxSec;
         // Warm sodium-vapour street-light tint (deep amber).
         colors[i*3]     = 1.00 * intensity;
         colors[i*3 + 1] = 0.62 * intensity;
@@ -1673,6 +1761,7 @@ function placeTileAsset(tile, sig) {
             tilesGroup.remove(obj);
             tileObjects.delete(tile.id);
         }
+        disposeTileEdges(tile.id);
         return;
     }
 
@@ -1859,6 +1948,10 @@ function placeTileAsset(tile, sig) {
         tileMesh.receiveShadow = true;
         host.add(tileMesh);
     });
+    // Cached edges (if any) are for the previous mesh set — replace them
+    // now while we still know which tile id they belonged to. Cheap when
+    // the overlay is off (placeTileEdges no-ops in that case).
+    placeTileEdges(tile.id, host);
 }
 
 function syncTiles() {
@@ -2024,6 +2117,7 @@ function setupHud() {
         lastSigByTileId.clear();
         for (const obj of tileObjects.values()) tilesGroup.remove(obj);
         tileObjects.clear();
+        clearAllTileEdges();
         syncTiles();
     };
 
@@ -2246,6 +2340,8 @@ function setupHud() {
     bindVisibility('bToggleRoutes', () => routesGroup.visible,      v => routesGroup.visible      = v);
     bindVisibility('bToggleTopo',   () => topoMesh.visible,         v => topoMesh.visible         = v);
     bindVisibility('bToggleWater',  () => waterMesh.visible,        v => waterMesh.visible        = v);
+    bindVisibility('bEdges',        () => edgesEnabled,
+                                    v => setEdgesEnabled(v));
     bindVisibility('bAdvanced',     () => advancedMode,             v => setAdvancedMode(v));
     bindVisibility('bDemo',         () => demoMode,                 v => setDemoMode(v));
     // Back-to-menu: full page reload returns the title screen and lets the
@@ -2313,6 +2409,7 @@ function rebuildGeometryAfterElevChange() {
     lastSigByTileId.clear();
     for (const obj of tileObjects.values()) tilesGroup.remove(obj);
     tileObjects.clear();
+    clearAllTileEdges();   // tile geometry rebuilt below
     syncTiles();
     buildCityLights();
 }
