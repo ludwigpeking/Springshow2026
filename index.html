@@ -116,6 +116,19 @@
   #bottomRightStack { position: absolute; bottom: 20px; right: 20px; z-index: 8;
                       display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 
+  /* Custom button tooltip — replaces the browser's native `title` tooltip
+     so hints appear instantly on hover and stay while the cursor moves
+     across the button. Positioned to whichever side of the button has
+     more room (handled in JS). */
+  #btnTooltip { position: absolute; z-index: 100; pointer-events: none;
+                background: rgba(0, 0, 0, 0.85); color: #f0e6d2;
+                padding: 6px 10px; border-radius: 4px;
+                font-family: Georgia, serif; font-size: 12px;
+                white-space: nowrap; max-width: 360px;
+                transform: translateY(-50%); opacity: 0;
+                transition: opacity 0.08s; }
+  #btnTooltip.show { opacity: 1; }
+
   /* Demonstration text overlay — drawn over the canvas at the bottom */
   #demoLabel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
                z-index: 6; pointer-events: none; opacity: 0;
@@ -170,9 +183,9 @@
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bToggleTiles"   title="city tiles">🏙️</button>
     <button class="ui-btn" id="bToggleRoutes"  title="route polylines">⛓</button>
-    <button class="ui-btn" id="bToggleTopo"    title="topography mesh (hidden by default)">🗺️</button>
     <button class="ui-btn" id="bToggleWater"   title="water plane">🌊</button>
     <button class="ui-btn" id="bEdges"         title="show edges (SketchUp-style line overlay)">🔲</button>
+    <button class="ui-btn" id="bMono"          title="monochrome — replace every tile material (except water) with white matte">⚪</button>
     <button class="ui-btn" id="bAdvanced"      title="advanced lighting (shadows + day/night cycle + city lights)">✨</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" data-layer="elevation"     title="elevation">⛰️</button>
@@ -199,13 +212,14 @@
     <button class="ui-btn text" id="bSpawn1"  title="spawn 1 step">+1</button>
     <button class="ui-btn text" id="bSpawn10" title="spawn 10 steps">+10</button>
     <button class="ui-btn text" id="bSpawn50" title="spawn 50 steps">+50</button>
+    <button class="ui-btn"      id="bAutoRestart" title="auto-restart the simulation once habitable land is mostly filled (only fires while auto-spawn is running)">🔁</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bRoute"   title="add a random route">🚏</button>
-    <button class="ui-btn" id="bResync"  title="re-sync tile assets">🔄</button>
     <button class="ui-btn" id="bClear"   title="clear all settlements & routes">🧹</button>
     <div class="ui-sep"></div>
     <button class="ui-btn" id="bSave"     title="save simulation as .json">💾</button>
     <button class="ui-btn" id="bLoad"     title="load .json">📂</button>
+    <button class="ui-btn" id="bExport"   title="export 3D model as OBJ + MTL (works in Blender, Unreal, Unity, SketchUp, 3D-print slicers)">📦</button>
     <button class="ui-btn" id="bHome"     title="back to main menu (city selection)">🏠</button>
     <button class="ui-btn" id="bSettings" title="settings (parameters)">⚙️</button>
 </div>
@@ -606,12 +620,39 @@ const tileEdgeObjects  = new Map();        // tile.id → edge host Group
 //   'road'  strip   → c2bab6
 //   'water' sea     → 88afb1  (Voronoi outlines under the sea)
 const _EDGE_SKIP_COLORS = new Set(['e2e2bc', 'c2bab6', '88afb1']);
+
+// Monochrome render mode: swap every tile-mesh material (except water)
+// for a single white Lambert. Toggleable via the ⚪ button. The original
+// material is stashed on userData so we can restore on toggle-off.
+const _WATER_COLOR_HEX = '88afb1';
+const monoMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+let monoEnabled = false;
+function _isWaterMat(m)  { return !!(m && m.color && m.color.getHexString() === _WATER_COLOR_HEX); }
+function _applyMono(mesh) {
+    if (!mesh.isMesh || !mesh.material || _isWaterMat(mesh.material)) return;
+    if (!mesh.userData._origMat) mesh.userData._origMat = mesh.material;
+    mesh.material = monoMat;
+}
+function _restoreMono(mesh) {
+    if (mesh.userData._origMat) {
+        mesh.material = mesh.userData._origMat;
+        delete mesh.userData._origMat;
+    }
+}
+function setMonoEnabled(on) {
+    monoEnabled = on;
+    tilesGroup.traverse(o => { if (o.isMesh) (on ? _applyMono : _restoreMono)(o); });
+}
 function _buildEdgeHost(host) {
     const eHost = new THREE.Group();
     for (const m of host.children) {
         if (!m.isMesh || !m.geometry || !m.material) continue;
-        const col = m.material.color;
-        const hex = col ? col.getHexString() : '';
+        // If monochrome swapped the material, the real identity lives on
+        // userData._origMat — filter against that so 'w' / 'road' / water
+        // are still skipped under mono.
+        const idMat = m.userData._origMat || m.material;
+        const col   = idMat.color;
+        const hex   = col ? col.getHexString() : '';
         if (_EDGE_SKIP_COLORS.has(hex)) continue;
         const eg = new THREE.EdgesGeometry(m.geometry, EDGE_ANGLE_DEG);
         eHost.add(new THREE.LineSegments(eg, _edgeMat));
@@ -639,7 +680,7 @@ function placeTileEdges(tileId, host) {
     tileEdgeObjects.set(tileId, eHost);
 }
 // Drop every cached edge — used when callers wipe tileObjects directly
-// (bResync / restartSimulation / rebuildGeometryAfterElevChange).
+// (restartSimulation / rebuildGeometryAfterElevChange).
 function clearAllTileEdges() {
     for (const eHost of tileEdgeObjects.values()) _disposeEdgeHost(eHost);
     tileEdgeObjects.clear();
@@ -1225,6 +1266,7 @@ function simStepN(n) {
 // of it (≥ 60% used) and restart automatically during auto-spawn.
 let initialHabitableCount = 0;
 const AUTO_RESTART_FRACTION = 0.6;
+let autoRestartEnabled = true;       // toggled by 🔁 bAutoRestart in right column
 
 // Full clean-slate restart — same map, but every per-vertex sim value
 // and every per-edge counter goes back to where it would be on a
@@ -1947,6 +1989,7 @@ function placeTileAsset(tile, sig) {
         tileMesh.castShadow    = true;
         tileMesh.receiveShadow = true;
         host.add(tileMesh);
+        if (monoEnabled) _applyMono(tileMesh);
     });
     // Cached edges (if any) are for the previous mesh set — replace them
     // now while we still know which tile id they belonged to. Cheap when
@@ -2049,6 +2092,114 @@ async function init(topoUrl) {
 }
 
 // ======================================================================
+// 3D-model export. Writes an Wavefront OBJ (+ companion MTL) of every
+// visible tile mesh, plus topo / water if they're on. OBJ is the one
+// portable format that opens cleanly in Blender, Unreal, Unity, SketchUp,
+// and the common 3D-print slicers (Cura, PrusaSlicer, Bambu, Orca).
+//
+// Coords: world-space Y-up (three.js native). Each importer can re-axis
+// on import; Blender's OBJ importer has an explicit axis dropdown.
+// Materials: emits Kd/Ka/Ks/d per material. Skips textures — the atlas
+// is colour-only.
+// ======================================================================
+function exportSceneOBJ() {
+    const objLines = ['# city export — wavefront OBJ', 'mtllib city.mtl'];
+    const mtlLines = ['# city export — materials (Kd colour only)'];
+    const matNameByRef = new Map();   // material ref → unique sanitised name
+
+    let vOffset = 1;   // OBJ indices are 1-based
+    const _v = new THREE.Vector3();
+    const _nm = new THREE.Matrix3();
+    let meshCount = 0;
+    let triCount  = 0;
+
+    const sanitize = (s) => (s || 'mat').replace(/[^A-Za-z0-9_-]/g, '_');
+
+    const recordMaterial = (mat) => {
+        if (matNameByRef.has(mat)) return matNameByRef.get(mat);
+        let base = sanitize(mat.name || `mat_${matNameByRef.size}`);
+        let name = base, i = 1;
+        const used = new Set(matNameByRef.values());
+        while (used.has(name)) name = `${base}_${i++}`;
+        matNameByRef.set(mat, name);
+        const c = mat.color || new THREE.Color(0xcccccc);
+        const op = (mat.opacity != null) ? mat.opacity : 1;
+        mtlLines.push('', `newmtl ${name}`,
+                      `Kd ${c.r.toFixed(4)} ${c.g.toFixed(4)} ${c.b.toFixed(4)}`,
+                      `Ka 0 0 0`, `Ks 0 0 0`, `d ${op.toFixed(4)}`, `illum 1`);
+        return name;
+    };
+
+    const collectMesh = (mesh) => {
+        if (!mesh.isMesh || !mesh.geometry) return;
+        // Respect visibility — walk up the parent chain to honour group toggles.
+        let cur = mesh;
+        while (cur) { if (cur.visible === false) return; cur = cur.parent; }
+        const g = mesh.geometry;
+        const pos = g.getAttribute('position');
+        const norm = g.getAttribute('normal');
+        if (!pos) return;
+
+        mesh.updateWorldMatrix(true, false);
+        const wm = mesh.matrixWorld;
+        _nm.getNormalMatrix(wm);
+
+        for (let i = 0; i < pos.count; i++) {
+            _v.fromBufferAttribute(pos, i).applyMatrix4(wm);
+            objLines.push(`v ${_v.x.toFixed(6)} ${_v.y.toFixed(6)} ${_v.z.toFixed(6)}`);
+        }
+        const hasN = !!norm;
+        if (hasN) {
+            for (let i = 0; i < norm.count; i++) {
+                _v.fromBufferAttribute(norm, i).applyMatrix3(_nm);
+                const len = Math.hypot(_v.x, _v.y, _v.z) || 1;
+                objLines.push(`vn ${(_v.x/len).toFixed(6)} ${(_v.y/len).toFixed(6)} ${(_v.z/len).toFixed(6)}`);
+            }
+        }
+
+        // Use the original (pre-mono) material so the export keeps colours
+        // even with monochrome mode on.
+        const mat = mesh.userData._origMat || mesh.material;
+        const matName = recordMaterial(mat);
+        objLines.push(`g mesh_${meshCount}`);
+        objLines.push(`usemtl ${matName}`);
+
+        const writeFace = (a, b, c) => {
+            const A = a + vOffset, B = b + vOffset, C = c + vOffset;
+            objLines.push(hasN
+                ? `f ${A}//${A} ${B}//${B} ${C}//${C}`
+                : `f ${A} ${B} ${C}`);
+            triCount++;
+        };
+        const idx = g.getIndex();
+        if (idx) {
+            const ia = idx.array;
+            for (let i = 0; i < ia.length; i += 3) writeFace(ia[i], ia[i+1], ia[i+2]);
+        } else {
+            for (let i = 0; i < pos.count; i += 3) writeFace(i, i+1, i+2);
+        }
+        vOffset += pos.count;
+        meshCount++;
+    };
+
+    tilesGroup.traverse(collectMesh);
+    if (topoMesh)  collectMesh(topoMesh);
+    if (waterMesh) collectMesh(waterMesh);
+
+    const download = (text, filename) => {
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url  = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; document.body.appendChild(a);
+        a.click(); a.remove();
+        URL.revokeObjectURL(url);
+    };
+    download(objLines.join('\n'), 'city.obj');
+    download(mtlLines.join('\n'), 'city.mtl');
+    console.log(`[export] ${meshCount} meshes, ${triCount} triangles, ${matNameByRef.size} materials → city.obj + city.mtl`);
+}
+
+// ======================================================================
 // HUD
 // ======================================================================
 function setupHud() {
@@ -2094,7 +2245,7 @@ function setupHud() {
         if (initialHabitableCount === 0 && habitable && habitable.length > 0) {
             initialHabitableCount = habitable.length;
         }
-        if (autoTimer && initialHabitableCount > 0) {
+        if (autoRestartEnabled && autoTimer && initialHabitableCount > 0) {
             const used = 1 - habitable.length / initialHabitableCount;
             if (used >= AUTO_RESTART_FRACTION) {
                 console.log(`[sim] habitable used ${(used*100).toFixed(0)}% — auto restart`);
@@ -2107,19 +2258,33 @@ function setupHud() {
     $('bSpawn10').onclick = () => spawn(10);
     $('bSpawn50').onclick = () => spawn(50);
     $('bRoute').onclick   = () => {
+        const before = routes.length;
+        const t0 = performance.now();
         createRandomRoute();
+        const t1 = performance.now();
+        const added = routes.length > before;
+        const route = added ? routes[routes.length - 1] : null;
+        const pathLen = route ? route.path.length : 0;
+        // Count how many vertices the route's traffic flip changed.
+        let occChanged = 0;
+        for (const v of vertices) if (v.occupiedByRoute) occChanged++;
+        const t2 = performance.now();
         syncRoutes();
-        syncTiles();   // routes set occupiedByRoute → tile signatures change
+        const t3 = performance.now();
+        const r = syncTiles();
+        const t4 = performance.now();
+        if (added && !routesGroup.visible) {
+            routesGroup.visible = true;
+            $('bToggleRoutes')?.classList.add('armed');
+        }
         refresh();
+        const t5 = performance.now();
+        console.log(`[route] pathfinding ${(t1-t0).toFixed(0)} ms | path ${pathLen} verts, occupiedByRoute total ${occChanged}`
+            + ` | syncRoutes ${(t3-t2).toFixed(0)} ms`
+            + ` | syncTiles ${(t4-t3).toFixed(0)} ms (placed ${r?.placed||0}, missing ${r?.missing||0})`
+            + ` | refresh ${(t5-t4).toFixed(0)} ms | total ${(t5-t0).toFixed(0)} ms`);
     };
     $('bClear').onclick = () => restartSimulation();
-    $('bResync').onclick = () => {
-        lastSigByTileId.clear();
-        for (const obj of tileObjects.values()) tilesGroup.remove(obj);
-        tileObjects.clear();
-        clearAllTileEdges();
-        syncTiles();
-    };
 
     let autoTimer = null;
     let autoMs    = 100;
@@ -2153,6 +2318,10 @@ function setupHud() {
     };
     const loadInput = $('iLoadFile');
     $('bLoad').onclick = () => loadInput.click();
+    $('bExport').onclick = () => {
+        try { exportSceneOBJ(); }
+        catch (e) { console.error(e); alert('export failed: ' + e.message); }
+    };
     loadInput.onchange = async (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
@@ -2338,19 +2507,18 @@ function setupHud() {
     }
     bindVisibility('bToggleTiles',  () => tilesGroup.visible,       v => tilesGroup.visible       = v);
     bindVisibility('bToggleRoutes', () => routesGroup.visible,      v => routesGroup.visible      = v);
-    bindVisibility('bToggleTopo',   () => topoMesh.visible,         v => topoMesh.visible         = v);
     bindVisibility('bToggleWater',  () => waterMesh.visible,        v => waterMesh.visible        = v);
     bindVisibility('bEdges',        () => edgesEnabled,
                                     v => setEdgesEnabled(v));
+    bindVisibility('bMono',         () => monoEnabled,
+                                    v => setMonoEnabled(v));
+    bindVisibility('bAutoRestart',  () => autoRestartEnabled,
+                                    v => { autoRestartEnabled = v; });
     bindVisibility('bAdvanced',     () => advancedMode,             v => setAdvancedMode(v));
     bindVisibility('bDemo',         () => demoMode,                 v => setDemoMode(v));
     // Back-to-menu: full page reload returns the title screen and lets the
     // user pick another city. Cleanest way to drop all sim/scene state.
-    $('bHome').onclick = () => {
-        if (confirm('Return to city-selection screen? Current simulation will be lost.')) {
-            location.reload();
-        }
-    };
+    $('bHome').onclick = () => location.reload();
 
     // Debug-layer buttons (left column, statically rendered with data-layer).
     // Mutually exclusive — clicking the active layer turns it off.
@@ -2392,6 +2560,36 @@ function setupHud() {
         panel.classList.add('hidden');
         $('bSettings').classList.remove('armed');
     };
+
+    // Custom tooltips: hint appears immediately on mouseenter, stays
+    // while the cursor moves over the button, hides on mouseleave.
+    // Replaces the browser's native `title` tooltip (which only shows
+    // after ~700 ms of stillness and re-hides on any movement).
+    const tooltip = document.createElement('div');
+    tooltip.id = 'btnTooltip';
+    document.body.appendChild(tooltip);
+    document.querySelectorAll('.ui-btn[title]').forEach(b => {
+        const text = b.getAttribute('title');
+        b.removeAttribute('title');     // suppress native tooltip
+        b.dataset.tooltip = text;
+        b.addEventListener('mouseenter', () => {
+            tooltip.textContent = b.dataset.tooltip;
+            const r = b.getBoundingClientRect();
+            tooltip.style.top = (r.top + r.height / 2) + 'px';
+            // Anchor on whichever side faces the screen interior.
+            if (r.left + r.width / 2 < window.innerWidth / 2) {
+                tooltip.style.right = '';
+                tooltip.style.left  = (r.right + 8) + 'px';
+            } else {
+                tooltip.style.left  = '';
+                tooltip.style.right = (window.innerWidth - r.left + 8) + 'px';
+            }
+            tooltip.classList.add('show');
+        });
+        b.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('show');
+        });
+    });
 }
 
 function rebuildGeometryAfterElevChange() {

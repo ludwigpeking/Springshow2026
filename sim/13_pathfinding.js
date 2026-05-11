@@ -32,25 +32,39 @@ function pathFinding(start, end, trafficWeight) {
         ? parseFloat(flatTerrainInput.value())
         : 2;
 
-    let openSet = [];
-    let closeSet = [];
+    // O(1) membership checks instead of array.includes — on a ~5k-vertex
+    // map the old version did ~hundreds of millions of comparisons per
+    // route, which read as a freeze in the UI.
+    const openSet     = [];
+    const openSetMem  = new Set();
+    const closeSet    = new Set();
 
     start.g = 0;
     start.h = calculateHeuristic(start, end);
     start.f = start.g + start.h;
     openSet.push(start);
+    openSetMem.add(start);
 
     let current = start;
 
     while (openSet.length > 0 && current.index !== end.index) {
-        openSet.sort((a, b) => a.f - b.f);
-        current = openSet.shift();
-        closeSet.push(current);
+        // Linear min-scan replaces sort+shift. Same big-O for a worst-case
+        // openSet, but no per-iteration n·log·n sort.
+        let minIdx = 0;
+        for (let i = 1; i < openSet.length; i++) {
+            if (openSet[i].f < openSet[minIdx].f) minIdx = i;
+        }
+        current = openSet[minIdx];
+        // Swap-pop instead of splice for O(1) removal.
+        openSet[minIdx] = openSet[openSet.length - 1];
+        openSet.pop();
+        openSetMem.delete(current);
+        closeSet.add(current);
 
         for (let neighborData of current.neighbors) {
             const neighbor = vertexByIndex.get(neighborData.vertexIndex);
             if (!neighbor) continue;
-            if (closeSet.includes(neighbor)) continue;
+            if (closeSet.has(neighbor)) continue;
 
             // Skip vertices occupied by settlements (but allow as start/end points)
             // Routes can cross other routes, so occupiedByRoute vertices are allowed
@@ -83,8 +97,9 @@ function pathFinding(start, end, trafficWeight) {
                 neighbor.h = calculateHeuristic(neighbor, end);
                 neighbor.f = neighbor.g + neighbor.h;
 
-                if (!openSet.includes(neighbor)) {
+                if (!openSetMem.has(neighbor)) {
                     openSet.push(neighbor);
+                    openSetMem.add(neighbor);
                 }
             }
         }
@@ -257,15 +272,22 @@ function createRandomRoute() {
     let end;
     let distance;
 
+    // v.x = hexX * mapping.scale, so the threshold must also be scaled by
+    // mapping.scale (not hexToCanvasScale — that was the 2D sim's unit, and
+    // mismatching it here made the loop never satisfy the >= 0.5·width
+    // condition, freezing the tab).
+    const minDistance =
+        topoData.mapping.hexWidth * topoData.mapping.scale * 0.5;
+    // Bound the search so a degenerate edgeVertices set can never freeze
+    // the UI — fall back to whatever last pick we got.
+    let tries = 0;
     do {
         end = edgeVertices[floor(random(edgeVertices.length))];
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         distance = sqrt(dx * dx + dy * dy);
-    } while (
-        distance <
-        topoData.mapping.hexWidth * topoData.mapping.hexToCanvasScale * 0.5
-    );
+        if (++tries > 200) break;
+    } while (distance < minDistance || end === start);
 
     const trafficInput = select("#trafficWeight");
     const trafficWeight = trafficInput ? parseFloat(trafficInput.value()) : 12;
